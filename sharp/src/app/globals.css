@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* Neo-Brutalist Color System */
+  --color-sharp-yellow: #FACC15;
+  --color-sharp-teal: #2DD4BF;
+  --color-sharp-pink: #F472B6;
+  --color-sharp-lavender: #A78BFA;
+  --color-sharp-red: #EF4444;
+  --color-sharp-green: #4ADE80;
+  --color-sharp-bg: #FFFBEB;
+
+  /* Font */
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Monaco, 'Courier New', monospace;
+}
+
+/* No dark mode — Neo-Brutalism uses high contrast light theme */
+body {
+  background: #FFFBEB;
+  color: #000000;
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Monaco, 'Courier New', monospace;
+}
+
+/* Hide scrollbar for category pill scrolling */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Custom spin-slow for placeholder icon */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
