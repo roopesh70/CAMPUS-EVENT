@@ -14,8 +14,9 @@ import { useVenues } from '@/hooks/useVenues';
 import { useFeedback } from '@/hooks/useFeedback';
 import { useActivityLogs } from '@/hooks/useActivityLogs';
 import { useTasks } from '@/hooks/useTasks';
+import { useCertificates } from '@/hooks/useCertificates';
 import { queryDocs, updateDocument, where, orderBy } from '@/lib/firestore';
-import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue } from '@/types';
+import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue, Certificate } from '@/types';
 import { Bell, Mail, Info, LogIn, Award, MessageSquare, CheckSquare, User, FileText, Users, CheckCircle, BarChart2, MapPin, Settings, Database, Activity, Send, Calendar } from 'lucide-react';
 
 /* ===== Public: Announcements ===== */
@@ -161,14 +162,127 @@ export function MyRegistrations() {
 
 /* ===== Student: Certificates ===== */
 export function CertificatesPage() {
+  const { profile, role } = useAuthStore();
+  const { certificates, loading, fetchUserCertificates, generateCertificate } = useCertificates();
+  const { events, fetchOrganizerEvents } = useEvents();
+  const { registrations, fetchEventParticipants } = useRegistrations();
+  const [selectedEvent, setSelectedEvent] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [genDone, setGenDone] = useState(false);
+
+  useEffect(() => {
+    if (profile?.uid) {
+      fetchUserCertificates(profile.uid);
+      if (role === 'organizer') fetchOrganizerEvents(profile.uid);
+    }
+  }, [profile?.uid, role, fetchUserCertificates, fetchOrganizerEvents]);
+
+  useEffect(() => {
+    if (selectedEvent) fetchEventParticipants(selectedEvent);
+  }, [selectedEvent, fetchEventParticipants]);
+
+  const downloadCert = (cert: Certificate) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1200; canvas.height = 850;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    // Background
+    ctx.fillStyle = '#FFFBEB'; ctx.fillRect(0, 0, 1200, 850);
+    // Border
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 6; ctx.strokeRect(30, 30, 1140, 790);
+    ctx.strokeStyle = '#FACC15'; ctx.lineWidth = 3; ctx.strokeRect(45, 45, 1110, 760);
+    // Title
+    ctx.fillStyle = '#000'; ctx.font = 'bold 48px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('CERTIFICATE OF', 600, 150);
+    ctx.font = 'bold italic 56px monospace';
+    ctx.fillText(cert.type.toUpperCase(), 600, 220);
+    // Line
+    ctx.fillStyle = '#FACC15'; ctx.fillRect(350, 250, 500, 4);
+    // Body
+    ctx.fillStyle = '#000'; ctx.font = '22px monospace'; ctx.fillText('This is to certify that', 600, 320);
+    ctx.font = 'bold 40px monospace'; ctx.fillText(cert.userName, 600, 390);
+    ctx.font = '22px monospace'; ctx.fillText('has successfully participated in', 600, 450);
+    ctx.font = 'bold 32px monospace'; ctx.fillText(cert.eventTitle, 600, 520);
+    // Date & Code
+    ctx.font = '18px monospace'; ctx.fillStyle = '#666';
+    const dateStr = cert.issueDate?.toDate ? cert.issueDate.toDate().toLocaleDateString() : new Date().toLocaleDateString();
+    ctx.fillText(`Date: ${dateStr}`, 600, 620);
+    ctx.fillText(`Verification: ${cert.verificationCode}`, 600, 660);
+    // Logo
+    ctx.fillStyle = '#000'; ctx.font = 'bold 28px monospace'; ctx.fillText('SHARP — Campus Events', 600, 750);
+
+    const link = document.createElement('a');
+    link.download = `certificate_${cert.verificationCode}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
+
+  const handleBulkGenerate = async () => {
+    if (!selectedEvent) return;
+    const evt = events.find(e => e.id === selectedEvent);
+    if (!evt) return;
+    setGenerating(true);
+    const present = registrations.filter(r => r.attendanceStatus === 'present');
+    for (const r of present) {
+      await generateCertificate(evt.id, evt.title, r.userId, r.userName, 'participation');
+    }
+    setGenerating(false);
+    setGenDone(true);
+    setTimeout(() => setGenDone(false), 4000);
+    if (profile?.uid) fetchUserCertificates(profile.uid);
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">Certificates</h2>
-      <BrutalCard className="p-6 text-center space-y-3">
-        <Award className="w-12 h-12 mx-auto opacity-20" />
-        <p className="text-[11px] font-black uppercase italic opacity-40">Certificates will appear here after you attend events</p>
-        <p className="text-[9px] font-bold opacity-30">Attend approved events & have your attendance verified to earn certificates</p>
-      </BrutalCard>
+
+      {/* Organizer: Generate Certificates */}
+      {role === 'organizer' && (
+        <BrutalCard color={COLORS.yellow} className="p-5 border-b-[5px] space-y-3">
+          <h3 className="font-black uppercase text-sm italic">Generate Certificates</h3>
+          <p className="text-[8px] font-bold opacity-50">Select an event to generate participation certificates for all attendees marked as present.</p>
+          <select value={selectedEvent} onChange={e => setSelectedEvent(e.target.value)}
+            className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+            <option value="">Choose event...</option>
+            {events.filter(e => e.status === 'approved' || e.status === 'completed').map(e => <option key={e.id} value={e.id}>{e.title} ({e.attendanceCount || 0} attended)</option>)}
+          </select>
+          {selectedEvent && (
+            <div className="flex items-center gap-3">
+              <span className="text-[9px] font-black uppercase opacity-50">{registrations.filter(r => r.attendanceStatus === 'present').length} eligible attendees</span>
+              <BrutalButton color={COLORS.teal} className="text-[9px] px-4" onClick={handleBulkGenerate} disabled={generating || registrations.filter(r => r.attendanceStatus === 'present').length === 0}>
+                {generating ? 'Generating...' : genDone ? '✓ Generated!' : 'Generate All'}
+              </BrutalButton>
+            </div>
+          )}
+        </BrutalCard>
+      )}
+
+      {/* Certificate List */}
+      {loading ? (
+        <BrutalCard className="p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">Loading certificates...</p></BrutalCard>
+      ) : certificates.length === 0 ? (
+        <BrutalCard className="p-8 text-center space-y-3">
+          <Award className="w-12 h-12 mx-auto opacity-20" />
+          <p className="text-[11px] font-black uppercase italic opacity-40">No certificates earned yet</p>
+          <p className="text-[9px] font-bold opacity-30">Attend events and get your attendance verified to earn certificates</p>
+        </BrutalCard>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {certificates.map((cert) => (
+            <BrutalCard key={cert.id} className="p-5 border-b-[5px] space-y-2">
+              <div className="flex justify-between items-start">
+                <Badge text={cert.type} color={cert.type === 'participation' ? COLORS.teal : cert.type === 'winner' ? COLORS.yellow : COLORS.pink} />
+                <span className="text-[7px] font-black uppercase opacity-30">{cert.issueDate?.toDate ? cert.issueDate.toDate().toLocaleDateString() : ''}</span>
+              </div>
+              <h4 className="font-black uppercase text-[12px] italic">{cert.eventTitle}</h4>
+              <p className="text-[8px] font-bold opacity-40">ID: {cert.verificationCode}</p>
+              <BrutalButton color={COLORS.yellow} className="w-full text-[9px] py-2" onClick={() => downloadCert(cert)}>
+                <FileText className="w-3.5 h-3.5" /> Download Certificate
+              </BrutalButton>
+            </BrutalCard>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -379,6 +493,11 @@ export function OrganizerMyEvents() {
     if (profile?.uid) fetchOrganizerEvents(profile.uid);
   }, [profile?.uid, fetchOrganizerEvents]);
 
+  const handleOutcome = async (eventId: string, outcome: 'success' | 'failed') => {
+    await updateDocument('events', eventId, { outcomeStatus: outcome, status: 'completed' });
+    if (profile?.uid) fetchOrganizerEvents(profile.uid);
+  };
+
   const filtered = tab === 'all' ? events : events.filter(e => e.status === tab);
 
   return (
@@ -406,13 +525,21 @@ export function OrganizerMyEvents() {
                   <div className="flex items-center gap-2 mb-1">
                     <Badge text={evt.category} color={COLORS.teal} />
                     <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : evt.status === 'pending' ? COLORS.yellow : '#fff'} />
+                    {evt.outcomeStatus && (
+                      <Badge text={evt.outcomeStatus} color={evt.outcomeStatus === 'success' ? COLORS.green : COLORS.red} />
+                    )}
                   </div>
                   <h4 className="font-black uppercase text-[12px] italic">{evt.title}</h4>
-                  <p className="text-[8px] font-bold opacity-40 uppercase">{evt.registeredCount}/{evt.capacity} registered</p>
+                  <p className="text-[8px] font-bold opacity-40 uppercase">{Math.max(evt.registeredCount || 0, 0)}/{evt.capacity} registered</p>
                 </div>
               </div>
               <div className="flex gap-2">
-                <BrutalButton color={COLORS.teal} className="px-3 py-1 text-[8px]">View</BrutalButton>
+                {evt.status === 'approved' && !evt.outcomeStatus && (
+                  <>
+                    <BrutalButton color={COLORS.green} className="px-3 py-1 text-[8px]" onClick={() => handleOutcome(evt.id, 'success')}>✓ Success</BrutalButton>
+                    <BrutalButton color={COLORS.red} className="px-3 py-1 text-[8px]" onClick={() => handleOutcome(evt.id, 'failed')}>✗ Failed</BrutalButton>
+                  </>
+                )}
               </div>
             </BrutalCard>
           ))
@@ -437,10 +564,29 @@ export function ParticipantsPage() {
     if (selectedEvent) fetchEventParticipants(selectedEvent);
   }, [selectedEvent, fetchEventParticipants]);
 
+  const exportCSV = () => {
+    if (registrations.length === 0) return;
+    const headers = ['Name', 'Department', 'Status', 'Attendance'];
+    const rows = registrations.map(r => [r.userName || 'Unknown', r.userDepartment || '', r.status, r.attendanceStatus || 'pending']);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `participants_${selectedEvent}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">Participants</h2>
+        {selectedEvent && registrations.length > 0 && (
+          <BrutalButton color={COLORS.yellow} className="text-[8px] px-3 py-1" onClick={exportCSV}>
+            <FileText className="w-3.5 h-3.5" /> Export CSV
+          </BrutalButton>
+        )}
       </div>
       <div className="space-y-1.5">
         <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Select Event</label>
@@ -456,19 +602,21 @@ export function ParticipantsPage() {
             <thead>
               <tr className="border-b-[2.5px] border-black text-[8px] uppercase opacity-40 italic tracking-widest bg-slate-50">
                 <th className="p-3">Name</th>
-                <th className="p-3">Email</th>
+                <th className="p-3">Department</th>
                 <th className="p-3 text-center">Status</th>
+                <th className="p-3 text-center">Attendance</th>
               </tr>
             </thead>
             <tbody className="text-[10px]">
               {registrations.length === 0 ? (
-                <tr><td colSpan={3} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No participants yet</td></tr>
+                <tr><td colSpan={4} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No participants yet</td></tr>
               ) : (
                 registrations.map((r) => (
                   <tr key={r.id} className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50">
                     <td className="p-3 font-black uppercase">{r.userName || 'Unknown'}</td>
                     <td className="p-3">{r.userDepartment || ''}</td>
                     <td className="p-3 text-center"><Badge text={r.status} color={r.status === 'confirmed' ? COLORS.green : COLORS.yellow} /></td>
+                    <td className="p-3 text-center"><Badge text={r.attendanceStatus || 'pending'} color={r.attendanceStatus === 'present' ? COLORS.green : r.attendanceStatus === 'absent' ? COLORS.red : COLORS.yellow} /></td>
                   </tr>
                 ))
               )}
@@ -480,13 +628,19 @@ export function ParticipantsPage() {
   );
 }
 
-/* ===== Organizer: Attendance ===== */
+/* ===== Organizer: Attendance (QR + Manual) ===== */
 export function AttendancePage() {
   const { profile } = useAuthStore();
   const { events, fetchOrganizerEvents } = useEvents();
   const { registrations, fetchEventParticipants, markAttendance } = useRegistrations();
   const [selectedEvent, setSelectedEvent] = useState('');
   const [marking, setMarking] = useState<string | null>(null);
+  const [mode, setMode] = useState<'qr' | 'scan' | 'manual'>('qr');
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<string>('');
+  const scannerRef = React.useRef<HTMLDivElement>(null);
+  const html5QrRef = React.useRef<any>(null);
 
   useEffect(() => {
     if (profile?.uid) fetchOrganizerEvents(profile.uid);
@@ -495,6 +649,75 @@ export function AttendancePage() {
   useEffect(() => {
     if (selectedEvent) fetchEventParticipants(selectedEvent);
   }, [selectedEvent, fetchEventParticipants]);
+
+  // Generate QR code when event is selected
+  useEffect(() => {
+    if (selectedEvent) {
+      import('qrcode').then(QRCode => {
+        QRCode.toDataURL(`SHARP_ATTENDANCE:${selectedEvent}`, {
+          width: 300,
+          margin: 2,
+          color: { dark: '#000', light: '#FFFBEB' },
+        }).then(url => setQrDataUrl(url)).catch(() => {});
+      });
+    }
+  }, [selectedEvent]);
+
+  // Start QR scanner
+  const startScanner = async () => {
+    if (!scannerRef.current || !selectedEvent) return;
+    setScanning(true);
+    setScanResult('');
+
+    try {
+      const { Html5Qrcode } = await import('html5-qrcode');
+      const scanner = new Html5Qrcode('qr-scanner-container');
+      html5QrRef.current = scanner;
+
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        async (decodedText) => {
+          // Expected format: SHARP_CHECKIN:{userId}
+          if (decodedText.startsWith('SHARP_CHECKIN:')) {
+            const userId = decodedText.replace('SHARP_CHECKIN:', '');
+            const reg = registrations.find(r => r.userId === userId);
+            if (reg && reg.attendanceStatus !== 'present') {
+              await markAttendance(reg.id, selectedEvent, 'present');
+              await fetchEventParticipants(selectedEvent);
+              setScanResult(`✓ Checked in: ${reg.userName}`);
+            } else if (reg) {
+              setScanResult(`Already checked in: ${reg.userName}`);
+            } else {
+              setScanResult(`User not registered for this event`);
+            }
+          } else {
+            setScanResult(`Invalid QR code`);
+          }
+          setTimeout(() => setScanResult(''), 3000);
+        },
+        () => {} // ignore errors
+      );
+    } catch (err) {
+      setScanResult('Camera access denied or not available');
+      setScanning(false);
+    }
+  };
+
+  const stopScanner = async () => {
+    if (html5QrRef.current) {
+      try {
+        await html5QrRef.current.stop();
+        html5QrRef.current = null;
+      } catch {}
+    }
+    setScanning(false);
+  };
+
+  // Cleanup scanner on unmount
+  useEffect(() => {
+    return () => { stopScanner(); };
+  }, []);
 
   const handleMark = async (regId: string, status: 'present' | 'absent') => {
     setMarking(regId);
@@ -511,7 +734,7 @@ export function AttendancePage() {
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-green-400 underline-offset-4">Attendance</h2>
       <div className="space-y-1.5">
         <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Select Event</label>
-        <select value={selectedEvent} onChange={e => setSelectedEvent(e.target.value)}
+        <select value={selectedEvent} onChange={e => { stopScanner(); setSelectedEvent(e.target.value); }}
           className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
           <option value="">Choose event...</option>
           {events.filter(e => e.status === 'approved').map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
@@ -536,53 +759,110 @@ export function AttendancePage() {
             </BrutalCard>
           </div>
 
-          {/* Participant List */}
-          <BrutalCard className="p-0 border-[2.5px] overflow-hidden">
-            <div className="p-3 border-b-[2.5px] border-black bg-black text-white">
-              <h3 className="text-[11px] font-black uppercase italic tracking-widest">Mark Attendance</h3>
-            </div>
-            <table className="w-full text-left font-bold">
-              <thead>
-                <tr className="border-b-[2px] border-black text-[8px] uppercase opacity-40 italic tracking-widest bg-slate-50">
-                  <th className="p-3">Name</th>
-                  <th className="p-3">Department</th>
-                  <th className="p-3 text-center">Status</th>
-                  <th className="p-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="text-[10px]">
-                {registrations.length === 0 ? (
-                  <tr><td colSpan={4} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No participants registered</td></tr>
+          {/* Mode Tabs */}
+          <div className="flex gap-2">
+            {([['qr', 'QR Code'], ['scan', 'Scanner'], ['manual', 'Manual']] as const).map(([m, label]) => (
+              <button key={m} onClick={() => { if (m !== 'scan') stopScanner(); setMode(m); }}
+                className={`border-[2px] border-black px-4 py-1.5 font-black uppercase text-[9px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${mode === m ? 'bg-yellow-400' : 'bg-white'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* QR Code Display */}
+          {mode === 'qr' && (
+            <BrutalCard className="p-6 border-b-[5px] text-center space-y-4">
+              <h3 className="font-black uppercase text-sm italic">Event QR Code</h3>
+              <p className="text-[8px] font-bold opacity-50">Display this QR code at the venue. Students scan to check in.</p>
+              {qrDataUrl ? (
+                <div className="inline-block border-[3px] border-black rounded-xl p-3 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                  <img src={qrDataUrl} alt="Event QR Code" className="w-64 h-64 mx-auto" />
+                </div>
+              ) : (
+                <p className="text-[9px] font-bold opacity-30">Generating QR code...</p>
+              )}
+              <p className="text-[7px] font-bold opacity-30 uppercase">Event ID: {selectedEvent}</p>
+              {qrDataUrl && (
+                <BrutalButton color={COLORS.yellow} className="text-[9px]" onClick={() => {
+                  const link = document.createElement('a');
+                  link.download = `qr_${selectedEvent}.png`;
+                  link.href = qrDataUrl;
+                  link.click();
+                }}>Download QR Code</BrutalButton>
+              )}
+            </BrutalCard>
+          )}
+
+          {/* QR Scanner */}
+          {mode === 'scan' && (
+            <BrutalCard className="p-6 border-b-[5px] space-y-4">
+              <h3 className="font-black uppercase text-sm italic text-center">Scan Student QR</h3>
+              <p className="text-[8px] font-bold opacity-50 text-center">Point camera at student&apos;s QR code to mark attendance automatically.</p>
+              <div id="qr-scanner-container" ref={scannerRef} className="border-[2px] border-black rounded-xl overflow-hidden mx-auto" style={{ maxWidth: 400 }} />
+              {scanResult && (
+                <div className={`border-[2px] rounded-xl p-3 text-center font-black text-[10px] uppercase italic ${scanResult.includes('✓') ? 'border-green-600 bg-green-50 text-green-700' : 'border-red-600 bg-red-50 text-red-700'}`}>
+                  {scanResult}
+                </div>
+              )}
+              <div className="flex justify-center">
+                {!scanning ? (
+                  <BrutalButton color={COLORS.teal} className="text-[9px]" onClick={startScanner}>Start Scanner</BrutalButton>
                 ) : (
-                  registrations.map((r) => (
-                    <tr key={r.id} className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50">
-                      <td className="p-3 font-black uppercase">{r.userName || 'Unknown'}</td>
-                      <td className="p-3">{r.userDepartment || '—'}</td>
-                      <td className="p-3 text-center">
-                        <Badge text={r.attendanceStatus || 'pending'} color={r.attendanceStatus === 'present' ? COLORS.green : r.attendanceStatus === 'absent' ? COLORS.red : COLORS.yellow} />
-                      </td>
-                      <td className="p-3 flex gap-1.5 justify-end">
-                        <button
-                          onClick={() => handleMark(r.id, 'present')}
-                          disabled={marking === r.id || r.attendanceStatus === 'present'}
-                          className="w-7 h-7 bg-green-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleMark(r.id, 'absent')}
-                          disabled={marking === r.id || r.attendanceStatus === 'absent'}
-                          className="w-7 h-7 bg-red-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
-                        >
-                          <User className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                  <BrutalButton color={COLORS.red} className="text-[9px]" onClick={stopScanner}>Stop Scanner</BrutalButton>
                 )}
-              </tbody>
-            </table>
-          </BrutalCard>
+              </div>
+            </BrutalCard>
+          )}
+
+          {/* Manual Attendance */}
+          {mode === 'manual' && (
+            <BrutalCard className="p-0 border-[2.5px] overflow-hidden">
+              <div className="p-3 border-b-[2.5px] border-black bg-black text-white">
+                <h3 className="text-[11px] font-black uppercase italic tracking-widest">Manual Check-in</h3>
+              </div>
+              <table className="w-full text-left font-bold">
+                <thead>
+                  <tr className="border-b-[2px] border-black text-[8px] uppercase opacity-40 italic tracking-widest bg-slate-50">
+                    <th className="p-3">Name</th>
+                    <th className="p-3">Department</th>
+                    <th className="p-3 text-center">Status</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[10px]">
+                  {registrations.length === 0 ? (
+                    <tr><td colSpan={4} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No participants registered</td></tr>
+                  ) : (
+                    registrations.map((r) => (
+                      <tr key={r.id} className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50">
+                        <td className="p-3 font-black uppercase">{r.userName || 'Unknown'}</td>
+                        <td className="p-3">{r.userDepartment || '—'}</td>
+                        <td className="p-3 text-center">
+                          <Badge text={r.attendanceStatus || 'pending'} color={r.attendanceStatus === 'present' ? COLORS.green : r.attendanceStatus === 'absent' ? COLORS.red : COLORS.yellow} />
+                        </td>
+                        <td className="p-3 flex gap-1.5 justify-end">
+                          <button
+                            onClick={() => handleMark(r.id, 'present')}
+                            disabled={marking === r.id || r.attendanceStatus === 'present'}
+                            className="w-7 h-7 bg-green-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleMark(r.id, 'absent')}
+                            disabled={marking === r.id || r.attendanceStatus === 'absent'}
+                            className="w-7 h-7 bg-red-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
+                          >
+                            <User className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </BrutalCard>
+          )}
         </>
       )}
     </div>
@@ -756,8 +1036,8 @@ export function OrganizerAnalytics() {
     if (profile?.uid) fetchOrganizerEvents(profile.uid);
   }, [profile?.uid, fetchOrganizerEvents]);
 
-  const totalRegs = events.reduce((s, e) => s + (e.registeredCount || 0), 0);
-  const avgFill = events.length > 0 ? Math.round(events.reduce((s, e) => s + ((e.registeredCount || 0) / Math.max(e.capacity, 1)) * 100, 0) / events.length) : 0;
+  const totalRegs = events.reduce((s, e) => s + Math.max(e.registeredCount || 0, 0), 0);
+  const avgFill = events.length > 0 ? Math.round(events.reduce((s, e) => s + (Math.max(e.registeredCount || 0, 0) / Math.max(e.capacity, 1)) * 100, 0) / events.length) : 0;
   const approved = events.filter(e => e.status === 'approved').length;
   const pending = events.filter(e => e.status === 'pending').length;
 
@@ -786,7 +1066,7 @@ export function OrganizerAnalytics() {
             <p className="mx-auto text-[10px] font-black uppercase italic opacity-20">No events yet</p>
           ) : (
             events.slice(0, 10).map((e) => {
-              const pct = e.capacity > 0 ? Math.round((e.registeredCount / e.capacity) * 100) : 5;
+              const pct = e.capacity > 0 ? Math.round((Math.max(e.registeredCount || 0, 0) / e.capacity) * 100) : 5;
               return (
                 <div key={e.id} className="flex-1 flex flex-col items-center gap-1">
                   <div className="w-full bg-black border-[1px] border-white group relative hover:bg-teal-400 transition-all rounded-t-lg" style={{ height: `${Math.max(pct, 5)}%` }}>

@@ -116,11 +116,12 @@ export function OrganizerDashboard() {
 
 export function CreateEventFlow() {
   const { profile } = useAuthStore();
-  const { createEvent } = useEvents();
+  const { events: allEvents, createEvent, fetchPublicEvents } = useEvents();
   const { venues, fetchVenues } = useVenues();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [conflict, setConflict] = useState<string | null>(null);
 
   // Form state
   const [title, setTitle] = useState('');
@@ -134,11 +135,37 @@ export function CreateEventFlow() {
   const [capacity, setCapacity] = useState('');
   const [resources, setResources] = useState<string[]>([]);
 
-  useEffect(() => { fetchVenues(); }, [fetchVenues]);
+  useEffect(() => { fetchVenues(); fetchPublicEvents(); }, [fetchVenues, fetchPublicEvents]);
 
   const toggleResource = (res: string) => {
     setResources(prev => prev.includes(res) ? prev.filter(r => r !== res) : [...prev, res]);
   };
+
+  // Check for venue/time conflicts
+  const checkConflicts = () => {
+    if (!venueId || !date || !startTime || !endTime) return null;
+    const newStart = new Date(`${date}T${startTime}`).getTime();
+    const newEnd = new Date(`${date}T${endTime}`).getTime();
+
+    for (const evt of allEvents) {
+      if (evt.venueId !== venueId) continue;
+      if (evt.status === 'rejected' || evt.status === 'draft') continue;
+      const eStart = evt.startTime?.toDate?.().getTime() || 0;
+      const eEnd = evt.endTime?.toDate?.().getTime() || 0;
+      // Check overlap
+      if (newStart < eEnd && newEnd > eStart) {
+        return `Conflicts with "${evt.title}" at the same venue`;
+      }
+    }
+    return null;
+  };
+
+  // Run conflict check when venue/time step is completed
+  useEffect(() => {
+    if (step === 3 && venueId && date) {
+      setConflict(checkConflicts());
+    }
+  }, [step]);
 
   const handleSubmit = async () => {
     if (!profile) return;
@@ -282,6 +309,12 @@ export function CreateEventFlow() {
 
         {step === 5 && (
           <div className="mt-2 space-y-4">
+            {conflict && (
+              <div className="border-[2.5px] border-red-600 rounded-xl p-4 bg-red-50">
+                <p className="text-[10px] font-black uppercase italic text-red-700">⚠ Scheduling Conflict: {conflict}</p>
+                <p className="text-[8px] font-bold opacity-50 mt-1">You can still submit, but the admin may reject due to this conflict.</p>
+              </div>
+            )}
             <div className="border-[2.5px] border-black rounded-xl p-4 bg-yellow-50">
               <p className="text-[10px] font-black uppercase italic text-center">Review your event details before submitting</p>
             </div>
