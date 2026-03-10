@@ -8,9 +8,13 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { BrutalInput } from '@/components/ui/BrutalInput';
 
 export function Topbar() {
-  const { toggleSidebar } = useUIStore();
+  const { toggleSidebar, setActiveTab } = useUIStore();
   const { profile, role, isAuthenticated } = useAuthStore();
   const { unreadCount } = useNotifications(profile?.uid);
+
+  const handleBellClick = () => {
+    setActiveTab('notifications');
+  };
 
   return (
     <header className="h-14 border-b-[3px] border-black bg-white flex items-center justify-between px-6 shrink-0 z-20">
@@ -37,10 +41,13 @@ export function Topbar() {
                 {profile.name || 'User'}
               </span>
             </div>
-            <button className="relative p-1.5 border-[2.5px] border-black rounded-lg hover:bg-teal-400 transition-all bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+            <button
+              onClick={handleBellClick}
+              className="relative p-1.5 border-[2.5px] border-black rounded-lg hover:bg-teal-400 transition-all bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none"
+            >
               <Bell className="w-4 h-4" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 border-[1.5px] border-black rounded-full text-white text-[7px] font-black flex items-center justify-center">
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 border-[1.5px] border-black rounded-full text-white text-[7px] font-black flex items-center justify-center animate-pulse">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
@@ -66,3 +73,4 @@ export function Topbar() {
     </header>
   );
 }
+

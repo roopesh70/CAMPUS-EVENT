@@ -141,10 +141,10 @@ export interface EventTask {
   id: string;
   eventId: string;
   title: string;
-  category: TaskCategory;
+  category?: TaskCategory;
   assignedTo: string;
-  shiftStart: Timestamp;
-  shiftEnd: Timestamp;
+  shiftStart?: Timestamp;
+  shiftEnd?: Timestamp;
   status: TaskStatus;
   createdAt: Timestamp;
 }

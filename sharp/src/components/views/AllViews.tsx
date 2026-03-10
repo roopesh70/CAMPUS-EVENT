@@ -13,6 +13,7 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useVenues } from '@/hooks/useVenues';
 import { useFeedback } from '@/hooks/useFeedback';
 import { useActivityLogs } from '@/hooks/useActivityLogs';
+import { useTasks } from '@/hooks/useTasks';
 import { queryDocs, updateDocument, where, orderBy } from '@/lib/firestore';
 import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue } from '@/types';
 import { Bell, Mail, Info, LogIn, Award, MessageSquare, CheckSquare, User, FileText, Users, CheckCircle, BarChart2, MapPin, Settings, Database, Activity, Send, Calendar } from 'lucide-react';
@@ -481,36 +482,204 @@ export function ParticipantsPage() {
 
 /* ===== Organizer: Attendance ===== */
 export function AttendancePage() {
+  const { profile } = useAuthStore();
+  const { events, fetchOrganizerEvents } = useEvents();
+  const { registrations, fetchEventParticipants, markAttendance } = useRegistrations();
+  const [selectedEvent, setSelectedEvent] = useState('');
+  const [marking, setMarking] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (profile?.uid) fetchOrganizerEvents(profile.uid);
+  }, [profile?.uid, fetchOrganizerEvents]);
+
+  useEffect(() => {
+    if (selectedEvent) fetchEventParticipants(selectedEvent);
+  }, [selectedEvent, fetchEventParticipants]);
+
+  const handleMark = async (regId: string, status: 'present' | 'absent') => {
+    setMarking(regId);
+    await markAttendance(regId, selectedEvent, status);
+    await fetchEventParticipants(selectedEvent);
+    setMarking(null);
+  };
+
+  const presentCount = registrations.filter(r => r.attendanceStatus === 'present').length;
+  const absentCount = registrations.filter(r => r.attendanceStatus === 'absent').length;
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-green-400 underline-offset-4">Attendance</h2>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <BrutalCard className="p-6 border-b-[6px] flex flex-col items-center gap-4">
-          <div className="w-48 h-48 border-[3px] border-dashed border-black rounded-2xl flex items-center justify-center bg-slate-50">
-            <CheckCircle className="w-16 h-16 opacity-10" />
-          </div>
-          <p className="text-[10px] font-black uppercase italic opacity-40">QR Scanner — Coming Soon</p>
-          <BrutalButton color={COLORS.teal} className="w-full py-3">Start QR Scanner</BrutalButton>
-        </BrutalCard>
-        <BrutalCard className="p-6 border-b-[6px] space-y-4">
-          <h3 className="font-black uppercase text-sm italic">How it works</h3>
-          <p className="text-[10px] font-bold opacity-60">Students show their QR code at the venue. Scan to mark attendance and auto-update the registration status.</p>
-        </BrutalCard>
+      <div className="space-y-1.5">
+        <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Select Event</label>
+        <select value={selectedEvent} onChange={e => setSelectedEvent(e.target.value)}
+          className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+          <option value="">Choose event...</option>
+          {events.filter(e => e.status === 'approved').map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+        </select>
       </div>
+
+      {selectedEvent && (
+        <>
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3">
+            <BrutalCard color={COLORS.teal} className="p-3 text-center border-b-[4px]">
+              <span className="text-[7px] font-black uppercase opacity-60">Total</span>
+              <div className="text-xl font-black">{registrations.length}</div>
+            </BrutalCard>
+            <BrutalCard color={COLORS.green} className="p-3 text-center border-b-[4px]">
+              <span className="text-[7px] font-black uppercase opacity-60">Present</span>
+              <div className="text-xl font-black">{presentCount}</div>
+            </BrutalCard>
+            <BrutalCard color={COLORS.red} className="p-3 text-center border-b-[4px]">
+              <span className="text-[7px] font-black uppercase opacity-60">Absent</span>
+              <div className="text-xl font-black">{absentCount}</div>
+            </BrutalCard>
+          </div>
+
+          {/* Participant List */}
+          <BrutalCard className="p-0 border-[2.5px] overflow-hidden">
+            <div className="p-3 border-b-[2.5px] border-black bg-black text-white">
+              <h3 className="text-[11px] font-black uppercase italic tracking-widest">Mark Attendance</h3>
+            </div>
+            <table className="w-full text-left font-bold">
+              <thead>
+                <tr className="border-b-[2px] border-black text-[8px] uppercase opacity-40 italic tracking-widest bg-slate-50">
+                  <th className="p-3">Name</th>
+                  <th className="p-3">Department</th>
+                  <th className="p-3 text-center">Status</th>
+                  <th className="p-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="text-[10px]">
+                {registrations.length === 0 ? (
+                  <tr><td colSpan={4} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No participants registered</td></tr>
+                ) : (
+                  registrations.map((r) => (
+                    <tr key={r.id} className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50">
+                      <td className="p-3 font-black uppercase">{r.userName || 'Unknown'}</td>
+                      <td className="p-3">{r.userDepartment || '—'}</td>
+                      <td className="p-3 text-center">
+                        <Badge text={r.attendanceStatus || 'pending'} color={r.attendanceStatus === 'present' ? COLORS.green : r.attendanceStatus === 'absent' ? COLORS.red : COLORS.yellow} />
+                      </td>
+                      <td className="p-3 flex gap-1.5 justify-end">
+                        <button
+                          onClick={() => handleMark(r.id, 'present')}
+                          disabled={marking === r.id || r.attendanceStatus === 'present'}
+                          className="w-7 h-7 bg-green-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleMark(r.id, 'absent')}
+                          disabled={marking === r.id || r.attendanceStatus === 'absent'}
+                          className="w-7 h-7 bg-red-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
+                        >
+                          <User className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </BrutalCard>
+        </>
+      )}
     </div>
   );
 }
 
 /* ===== Organizer: Tasks ===== */
 export function TasksPage() {
+  const { profile } = useAuthStore();
+  const { events, fetchOrganizerEvents } = useEvents();
+  const { tasks, loading, fetchEventTasks, createTask, updateTaskStatus } = useTasks();
+  const [selectedEvent, setSelectedEvent] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newAssignee, setNewAssignee] = useState('');
+
+  useEffect(() => {
+    if (profile?.uid) fetchOrganizerEvents(profile.uid);
+  }, [profile?.uid, fetchOrganizerEvents]);
+
+  useEffect(() => {
+    if (selectedEvent) fetchEventTasks(selectedEvent);
+  }, [selectedEvent, fetchEventTasks]);
+
+  const handleCreate = async () => {
+    if (!newTitle || !selectedEvent || !profile) return;
+    await createTask({
+      eventId: selectedEvent,
+      title: newTitle,
+      assignedTo: newAssignee || profile.name || 'Unassigned',
+      status: 'pending',
+    });
+    setNewTitle('');
+    setNewAssignee('');
+    setShowForm(false);
+    fetchEventTasks(selectedEvent);
+  };
+
+  const handleStatusChange = async (taskId: string, status: 'pending' | 'in_progress' | 'completed') => {
+    await updateTaskStatus(taskId, status);
+    fetchEventTasks(selectedEvent);
+  };
+
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">Tasks</h2>
-      <BrutalCard className="p-6 text-center space-y-3">
-        <CheckSquare className="w-12 h-12 mx-auto opacity-20" />
-        <p className="text-[11px] font-black uppercase italic opacity-40">Task management — coming soon</p>
-        <p className="text-[9px] font-bold opacity-30">Create and assign tasks to team members for your events</p>
-      </BrutalCard>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">Tasks</h2>
+        {selectedEvent && <BrutalButton color={COLORS.teal} className="text-[8px] px-3 py-1" onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : '+ New Task'}</BrutalButton>}
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Select Event</label>
+        <select value={selectedEvent} onChange={e => setSelectedEvent(e.target.value)}
+          className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+          <option value="">Choose event...</option>
+          {events.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+        </select>
+      </div>
+
+      {/* Create Task Form */}
+      {showForm && (
+        <BrutalCard color={COLORS.yellow} className="p-5 border-b-[5px] space-y-3">
+          <h3 className="font-black uppercase text-sm italic">New Task</h3>
+          <BrutalInput placeholder="Task title..." value={newTitle} onChange={e => setNewTitle(e.target.value)} />
+          <BrutalInput placeholder="Assign to..." value={newAssignee} onChange={e => setNewAssignee(e.target.value)} />
+          <BrutalButton color={COLORS.teal} className="w-full py-2" onClick={handleCreate} disabled={!newTitle}>Create Task</BrutalButton>
+        </BrutalCard>
+      )}
+
+      {/* Task List */}
+      {selectedEvent && (
+        <div className="space-y-2">
+          {loading ? (
+            <BrutalCard className="p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">Loading tasks...</p></BrutalCard>
+          ) : tasks.length === 0 ? (
+            <BrutalCard className="p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">No tasks yet. Create one above!</p></BrutalCard>
+          ) : (
+            tasks.map((task) => (
+              <BrutalCard key={task.id} className="flex items-center gap-4 p-4 border-l-[6px]" style={{ borderLeftColor: task.status === 'completed' ? COLORS.green : task.status === 'in_progress' ? COLORS.yellow : '#ddd' }}>
+                <div className="flex-1">
+                  <h4 className={`font-black uppercase text-[11px] italic ${task.status === 'completed' ? 'line-through opacity-40' : ''}`}>{task.title}</h4>
+                  <p className="text-[8px] font-bold opacity-40">Assigned to: {task.assignedTo}</p>
+                </div>
+                <select
+                  value={task.status}
+                  onChange={e => handleStatusChange(task.id, e.target.value as 'pending' | 'in_progress' | 'completed')}
+                  className="border-[2px] border-black px-2 py-1 text-[8px] font-black uppercase bg-white rounded-lg shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </BrutalCard>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -519,20 +688,30 @@ export function TasksPage() {
 export function EventUpdatesPage() {
   const { profile } = useAuthStore();
   const { events, fetchOrganizerEvents } = useEvents();
+  const { registrations, fetchEventParticipants } = useRegistrations();
   const { createNotification } = useNotifications(profile?.uid);
   const [eventId, setEventId] = useState('');
   const [message, setMessage] = useState('');
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => { if (profile?.uid) fetchOrganizerEvents(profile.uid); }, [profile?.uid, fetchOrganizerEvents]);
 
+  useEffect(() => { if (eventId) fetchEventParticipants(eventId); }, [eventId, fetchEventParticipants]);
+
+  const selectedEvent = events.find(e => e.id === eventId);
+
   const handleSend = async () => {
-    if (!eventId || !message) return;
-    // In production, this would notify all registered users
-    // For now, create a notification for the organizer as confirmation
-    if (profile) {
-      await createNotification(profile.uid, 'Update Sent', `Update for event sent: ${message}`, 'update', eventId);
-    }
+    if (!eventId || !message || !profile) return;
+    setSending(true);
+    // Send notification to ALL registered participants
+    const promises = registrations.map(r =>
+      createNotification(r.userId, `Update: ${selectedEvent?.title || 'Event'}`, message, 'update', eventId)
+    );
+    // Also send to organizer as confirmation
+    promises.push(createNotification(profile.uid, 'Update Sent', `You sent: ${message}`, 'update', eventId));
+    await Promise.all(promises);
+    setSending(false);
     setSent(true);
     setMessage('');
     setTimeout(() => setSent(false), 3000);
@@ -542,47 +721,55 @@ export function EventUpdatesPage() {
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-pink-400 underline-offset-4">Event Updates</h2>
       <BrutalCard className="p-6 space-y-5 border-b-[6px]">
+        <h3 className="font-black uppercase text-sm italic">Send Update to Participants</h3>
         <div className="space-y-1.5">
           <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Select Event</label>
           <select value={eventId} onChange={e => setEventId(e.target.value)}
             className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
             <option value="">Choose event...</option>
-            {events.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+            {events.map(e => <option key={e.id} value={e.id}>{e.title} ({e.registeredCount} registered)</option>)}
           </select>
         </div>
+        {eventId && (
+          <div className="bg-teal-50 border-[2px] border-teal-400 rounded-xl p-2.5">
+            <p className="text-[9px] font-black uppercase italic text-teal-700">This update will be sent to {registrations.length} registered participant{registrations.length !== 1 ? 's' : ''}</p>
+          </div>
+        )}
         <div className="space-y-1.5">
           <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Message</label>
           <textarea value={message} onChange={e => setMessage(e.target.value)}
             className="w-full border-[2.5px] border-black p-3 font-bold text-xs h-24 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl focus:outline-none" placeholder="Type your update..." />
         </div>
-        {sent && <div className="bg-green-100 border-[2px] border-green-500 rounded-xl p-2 text-center"><span className="text-[10px] font-black uppercase text-green-700">✓ Update sent!</span></div>}
-        <BrutalButton className="w-full py-3" color={COLORS.yellow} onClick={handleSend} disabled={!eventId || !message}><Send className="w-4 h-4" /> Send Notification</BrutalButton>
+        {sent && <div className="bg-green-100 border-[2px] border-green-500 rounded-xl p-2 text-center"><span className="text-[10px] font-black uppercase text-green-700">✓ Update sent to {registrations.length} participant{registrations.length !== 1 ? 's' : ''}!</span></div>}
+        <BrutalButton className="w-full py-3" color={COLORS.yellow} onClick={handleSend} disabled={!eventId || !message || sending}><Send className="w-4 h-4" /> {sending ? 'Sending...' : 'Send Notification'}</BrutalButton>
       </BrutalCard>
     </div>
   );
 }
 
-/* ===== Analytics (shared organizer/admin) ===== */
-export function AnalyticsPage() {
-  const { events, fetchAllEvents } = useEvents();
-  const [totalRegs, setTotalRegs] = useState(0);
+/* ===== Organizer: Analytics (own events only) ===== */
+export function OrganizerAnalytics() {
+  const { profile } = useAuthStore();
+  const { events, fetchOrganizerEvents } = useEvents();
 
   useEffect(() => {
-    fetchAllEvents().then(evts => {
-      if (evts) setTotalRegs(evts.reduce((sum: number, e: CampusEvent) => sum + (e.registeredCount || 0), 0));
-    });
-  }, [fetchAllEvents]);
+    if (profile?.uid) fetchOrganizerEvents(profile.uid);
+  }, [profile?.uid, fetchOrganizerEvents]);
 
-  const avgCapacity = events.length > 0 ? Math.round(events.reduce((s, e) => s + ((e.registeredCount || 0) / Math.max(e.capacity, 1)) * 100, 0) / events.length) : 0;
+  const totalRegs = events.reduce((s, e) => s + (e.registeredCount || 0), 0);
+  const avgFill = events.length > 0 ? Math.round(events.reduce((s, e) => s + ((e.registeredCount || 0) / Math.max(e.capacity, 1)) * 100, 0) / events.length) : 0;
+  const approved = events.filter(e => e.status === 'approved').length;
+  const pending = events.filter(e => e.status === 'pending').length;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">Analytics</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">My Analytics</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total Registrations', value: String(totalRegs), color: COLORS.teal },
-          { label: 'Avg Fill Rate', value: `${avgCapacity}%`, color: COLORS.yellow },
-          { label: 'Total Events', value: String(events.length), color: COLORS.pink },
+          { label: 'My Events', value: String(events.length), color: COLORS.teal },
+          { label: 'Total Registrations', value: String(totalRegs), color: COLORS.yellow },
+          { label: 'Avg Fill Rate', value: `${avgFill}%`, color: COLORS.pink },
+          { label: 'Approved / Pending', value: `${approved}/${pending}`, color: COLORS.lavender },
         ].map((stat, i) => (
           <BrutalCard key={i} color={stat.color} className="p-4 border-b-[5px] text-center">
             <span className="text-[7px] font-black uppercase opacity-60 tracking-wider">{stat.label}</span>
@@ -590,17 +777,183 @@ export function AnalyticsPage() {
           </BrutalCard>
         ))}
       </div>
-      <BrutalCard className="h-48 flex items-end justify-between p-6 gap-2 border-[2.5px] bg-white">
-        {events.slice(0, 12).map((e, i) => {
-          const pct = e.capacity > 0 ? Math.round((e.registeredCount / e.capacity) * 100) : 10;
-          return (
-            <div key={i} className="flex-1 bg-black border-[1px] border-white group relative hover:bg-teal-400 transition-all rounded-t-lg" style={{ height: `${Math.max(pct, 5)}%` }}>
-              <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-black text-white px-1.5 py-0.5 rounded text-[7px] opacity-0 group-hover:opacity-100 transition-opacity font-bold border border-white">{pct}</div>
-            </div>
-          );
-        })}
-        {events.length === 0 && <p className="mx-auto text-[10px] font-black uppercase italic opacity-20">No data yet</p>}
+
+      {/* Bar chart of event registrations */}
+      <BrutalCard className="space-y-3 p-5 border-b-[6px]">
+        <h3 className="font-black uppercase text-sm italic">Registration per Event</h3>
+        <div className="h-48 flex items-end justify-between gap-2">
+          {events.length === 0 ? (
+            <p className="mx-auto text-[10px] font-black uppercase italic opacity-20">No events yet</p>
+          ) : (
+            events.slice(0, 10).map((e) => {
+              const pct = e.capacity > 0 ? Math.round((e.registeredCount / e.capacity) * 100) : 5;
+              return (
+                <div key={e.id} className="flex-1 flex flex-col items-center gap-1">
+                  <div className="w-full bg-black border-[1px] border-white group relative hover:bg-teal-400 transition-all rounded-t-lg" style={{ height: `${Math.max(pct, 5)}%` }}>
+                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-black text-white px-1.5 py-0.5 rounded text-[7px] opacity-0 group-hover:opacity-100 transition-opacity font-bold border border-white whitespace-nowrap">{e.registeredCount}/{e.capacity}</div>
+                  </div>
+                  <span className="text-[6px] font-black uppercase opacity-30 truncate w-full text-center">{e.title.slice(0, 8)}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
       </BrutalCard>
+
+      {/* Event Status Breakdown */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <BrutalCard className="p-5 border-b-[5px] space-y-3">
+          <h3 className="font-black uppercase text-sm italic">Status Breakdown</h3>
+          {['approved', 'pending', 'draft', 'rejected', 'completed'].map(status => {
+            const count = events.filter(e => e.status === status).length;
+            const pct = events.length > 0 ? Math.round((count / events.length) * 100) : 0;
+            return (
+              <div key={status} className="flex items-center gap-3">
+                <span className="text-[8px] font-black uppercase w-16">{status}</span>
+                <div className="flex-1 h-5 bg-slate-100 border-[1.5px] border-black rounded-lg overflow-hidden">
+                  <div className="h-full transition-all rounded-lg" style={{ width: `${pct}%`, backgroundColor: status === 'approved' ? COLORS.green : status === 'pending' ? COLORS.yellow : status === 'rejected' ? COLORS.red : COLORS.teal }} />
+                </div>
+                <span className="text-[9px] font-black w-8 text-right">{count}</span>
+              </div>
+            );
+          })}
+        </BrutalCard>
+        <BrutalCard className="p-5 border-b-[5px] space-y-3">
+          <h3 className="font-black uppercase text-sm italic">Category Mix</h3>
+          {['technical', 'cultural', 'sports', 'academic', 'workshop', 'competition'].map(cat => {
+            const count = events.filter(e => e.category === cat).length;
+            return count > 0 ? (
+              <div key={cat} className="flex items-center justify-between">
+                <Badge text={cat} color={cat === 'technical' ? COLORS.teal : cat === 'cultural' ? COLORS.pink : cat === 'sports' ? COLORS.yellow : COLORS.lavender} />
+                <span className="text-lg font-black">{count}</span>
+              </div>
+            ) : null;
+          })}
+          {events.length === 0 && <p className="text-[10px] font-black uppercase italic opacity-30">No data</p>}
+        </BrutalCard>
+      </div>
+    </div>
+  );
+}
+
+/* ===== Admin: Platform Analytics ===== */
+export function AdminAnalytics() {
+  const { events, fetchAllEvents } = useEvents();
+  const [userCount, setUserCount] = useState(0);
+  const [usersByRole, setUsersByRole] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    fetchAllEvents();
+    queryDocs<UserProfile>('users', []).then(users => {
+      setUserCount(users.length);
+      const roleMap: Record<string, number> = {};
+      users.forEach(u => { roleMap[u.role || 'student'] = (roleMap[u.role || 'student'] || 0) + 1; });
+      setUsersByRole(roleMap);
+    });
+  }, [fetchAllEvents]);
+
+  const totalRegs = events.reduce((s, e) => s + (e.registeredCount || 0), 0);
+  const avgFill = events.length > 0 ? Math.round(events.reduce((s, e) => s + ((e.registeredCount || 0) / Math.max(e.capacity, 1)) * 100, 0) / events.length) : 0;
+  const approved = events.filter(e => e.status === 'approved').length;
+  const pending = events.filter(e => e.status === 'pending').length;
+  const rejected = events.filter(e => e.status === 'rejected').length;
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-pink-400 underline-offset-4">Platform Analytics</h2>
+
+      {/* Top Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        {[
+          { label: 'Users', value: String(userCount), color: COLORS.teal },
+          { label: 'Events', value: String(events.length), color: COLORS.yellow },
+          { label: 'Registrations', value: String(totalRegs), color: COLORS.pink },
+          { label: 'Avg Fill', value: `${avgFill}%`, color: COLORS.lavender },
+          { label: 'Pending', value: String(pending), color: '#FCA5A5' },
+        ].map((stat, i) => (
+          <BrutalCard key={i} color={stat.color} className="p-4 border-b-[5px] text-center">
+            <span className="text-[7px] font-black uppercase opacity-60 tracking-wider">{stat.label}</span>
+            <div className="text-2xl font-black mt-1">{stat.value}</div>
+          </BrutalCard>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* User Distribution */}
+        <BrutalCard className="p-5 border-b-[6px] space-y-4">
+          <h3 className="font-black uppercase text-sm italic">User Distribution</h3>
+          {Object.entries(usersByRole).map(([role, count]) => {
+            const pct = userCount > 0 ? Math.round((count / userCount) * 100) : 0;
+            return (
+              <div key={role} className="flex items-center gap-3">
+                <Badge text={role} color={role === 'admin' ? COLORS.lavender : role === 'organizer' ? COLORS.teal : COLORS.yellow} />
+                <div className="flex-1 h-6 bg-slate-100 border-[1.5px] border-black rounded-lg overflow-hidden">
+                  <div className="h-full transition-all rounded-lg" style={{ width: `${pct}%`, backgroundColor: role === 'admin' ? COLORS.lavender : role === 'organizer' ? COLORS.teal : COLORS.yellow }} />
+                </div>
+                <span className="text-sm font-black">{count}</span>
+              </div>
+            );
+          })}
+        </BrutalCard>
+
+        {/* Event Status Distribution */}
+        <BrutalCard className="p-5 border-b-[6px] space-y-4">
+          <h3 className="font-black uppercase text-sm italic">Event Status Distribution</h3>
+          {[
+            { status: 'Approved', count: approved, color: COLORS.green },
+            { status: 'Pending', count: pending, color: COLORS.yellow },
+            { status: 'Rejected', count: rejected, color: COLORS.red },
+            { status: 'Draft', count: events.filter(e => e.status === 'draft').length, color: '#E2E8F0' },
+            { status: 'Completed', count: events.filter(e => e.status === 'completed').length, color: COLORS.teal },
+          ].map((item) => {
+            const pct = events.length > 0 ? Math.round((item.count / events.length) * 100) : 0;
+            return (
+              <div key={item.status} className="flex items-center gap-3">
+                <span className="text-[8px] font-black uppercase w-20">{item.status}</span>
+                <div className="flex-1 h-5 bg-slate-100 border-[1.5px] border-black rounded-lg overflow-hidden">
+                  <div className="h-full transition-all rounded-lg" style={{ width: `${pct}%`, backgroundColor: item.color }} />
+                </div>
+                <span className="text-[9px] font-black w-8 text-right">{item.count}</span>
+              </div>
+            );
+          })}
+        </BrutalCard>
+      </div>
+
+      {/* Category Breakdown + Registration Chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <BrutalCard className="p-5 border-b-[6px] space-y-4">
+          <h3 className="font-black uppercase text-sm italic">Events by Category</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {['technical', 'cultural', 'sports', 'academic', 'workshop', 'seminar', 'competition', 'social'].map(cat => {
+              const count = events.filter(e => e.category === cat).length;
+              return (
+                <div key={cat} className="flex items-center justify-between border-[2px] border-black rounded-xl p-2.5">
+                  <Badge text={cat} color={cat === 'technical' ? COLORS.teal : cat === 'cultural' ? COLORS.pink : cat === 'sports' ? COLORS.yellow : COLORS.lavender} />
+                  <span className="text-lg font-black">{count}</span>
+                </div>
+              );
+            })}
+          </div>
+        </BrutalCard>
+
+        <BrutalCard className="p-5 border-b-[6px] space-y-4">
+          <h3 className="font-black uppercase text-sm italic">Top Events by Registration</h3>
+          {events.sort((a, b) => (b.registeredCount || 0) - (a.registeredCount || 0)).slice(0, 5).map((evt, i) => (
+            <div key={evt.id} className="flex items-center gap-3">
+              <span className="text-lg font-black opacity-20 italic w-6">{i + 1}</span>
+              <div className="flex-1">
+                <h4 className="font-black uppercase text-[10px] italic truncate">{evt.title}</h4>
+                <p className="text-[7px] font-bold opacity-40">{evt.registeredCount}/{evt.capacity} registered</p>
+              </div>
+              <div className="w-12 h-8 bg-teal-400 border-[1.5px] border-black rounded-lg flex items-center justify-center">
+                <span className="text-[10px] font-black">{evt.registeredCount}</span>
+              </div>
+            </div>
+          ))}
+          {events.length === 0 && <p className="text-[10px] font-black uppercase italic opacity-30">No events yet</p>}
+        </BrutalCard>
+      </div>
     </div>
   );
 }
@@ -743,26 +1096,33 @@ export function UserManagement() {
 /* ===== Admin: System Notifications ===== */
 export function SystemNotificationsPage() {
   const { profile } = useAuthStore();
-  const { createNotification } = useNotifications(profile?.uid);
+  const { notifications, broadcastNotification } = useNotifications(profile?.uid);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const handleSend = async () => {
     if (!profile || !message) return;
-    // In a real app, this would send to all users via Cloud Functions
-    // For demo, create a notification for the admin
-    await createNotification(profile.uid, subject || 'System Notification', message, 'system');
+    setSending(true);
+    await broadcastNotification(subject || 'System Notification', message, 'system');
+    setSending(false);
     setSent(true);
     setMessage('');
     setSubject('');
     setTimeout(() => setSent(false), 3000);
   };
 
+  // Show broadcast notifications from history
+  const broadcastHistory = notifications.filter(n => n.type === 'system');
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">System Notifications</h2>
+
+      {/* Send form */}
       <BrutalCard className="p-6 space-y-5 border-b-[6px]">
+        <h3 className="font-black uppercase text-sm italic">Broadcast to All Users</h3>
         <div className="space-y-1.5">
           <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Subject</label>
           <BrutalInput placeholder="Notification subject..." value={subject} onChange={e => setSubject(e.target.value)} />
@@ -772,8 +1132,33 @@ export function SystemNotificationsPage() {
           <textarea value={message} onChange={e => setMessage(e.target.value)}
             className="w-full border-[2.5px] border-black p-3 font-bold text-xs h-24 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl focus:outline-none" placeholder="Type your announcement..." />
         </div>
-        {sent && <div className="bg-green-100 border-[2px] border-green-500 rounded-xl p-2 text-center"><span className="text-[10px] font-black uppercase text-green-700">✓ Sent!</span></div>}
-        <BrutalButton className="w-full py-3" color={COLORS.yellow} onClick={handleSend} disabled={!message}><Send className="w-4 h-4" /> Send Announcement</BrutalButton>
+        {sent && <div className="bg-green-100 border-[2px] border-green-500 rounded-xl p-2 text-center"><span className="text-[10px] font-black uppercase text-green-700">✓ Broadcast sent to all users!</span></div>}
+        <BrutalButton className="w-full py-3" color={COLORS.yellow} onClick={handleSend} disabled={!message || sending}><Send className="w-4 h-4" /> {sending ? 'Sending...' : 'Send Announcement'}</BrutalButton>
+      </BrutalCard>
+
+      {/* Broadcast History */}
+      <BrutalCard className="p-0 border-[2.5px] overflow-hidden">
+        <div className="p-3 border-b-[2.5px] border-black bg-black text-white flex justify-between items-center">
+          <h3 className="text-[11px] font-black uppercase italic tracking-widest">Broadcast History</h3>
+          <Badge text={`${broadcastHistory.length} sent`} color={COLORS.teal} />
+        </div>
+        <div className="max-h-[300px] overflow-y-auto">
+          {broadcastHistory.length === 0 ? (
+            <div className="p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">No announcements sent yet</p></div>
+          ) : (
+            broadcastHistory.map((n, i) => (
+              <div key={n.id || i} className="p-3.5 border-b-[1.5px] border-black border-opacity-10 last:border-0 hover:bg-yellow-50">
+                <div className="flex justify-between items-start mb-1">
+                  <span className="font-black uppercase text-[10px] italic">{n.title}</span>
+                  <span className="text-[7.5px] font-black opacity-30 italic">
+                    {n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : 'just now'}
+                  </span>
+                </div>
+                <p className="text-[9px] font-bold opacity-60 leading-tight">{n.message}</p>
+              </div>
+            ))
+          )}
+        </div>
       </BrutalCard>
     </div>
   );

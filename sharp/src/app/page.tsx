@@ -21,7 +21,7 @@ import {
   MyRegistrations, CertificatesPage, FeedbackPage,
   NotificationsPage, ProfilePage,
   OrganizerMyEvents, ParticipantsPage, AttendancePage,
-  TasksPage, EventUpdatesPage, AnalyticsPage,
+  TasksPage, EventUpdatesPage, OrganizerAnalytics, AdminAnalytics,
   VenueManagement, UserManagement, SystemNotificationsPage,
   SystemSettingsPage, DataManagementPage, ActivityLogsPage,
 } from '@/components/views/AllViews';
@@ -58,7 +58,7 @@ function OrganizerView({ tab }: { tab: string }) {
   if (tab === 'certificates') return <CertificatesPage />;
   if (tab === 'tasks') return <TasksPage />;
   if (tab === 'updates') return <EventUpdatesPage />;
-  if (tab === 'analytics') return <AnalyticsPage />;
+  if (tab === 'analytics') return <OrganizerAnalytics />;
   if (tab === 'notifications') return <NotificationsPage />;
   if (tab === 'profile') return <ProfilePage />;
   return <PlaceholderSection title={tab} />;
@@ -70,7 +70,7 @@ function AdminView({ tab }: { tab: string }) {
   if (tab === 'calendar') return <CalendarView />;
   if (tab === 'venues') return <VenueManagement />;
   if (tab === 'users') return <UserManagement />;
-  if (tab === 'analytics') return <AnalyticsPage />;
+  if (tab === 'analytics') return <AdminAnalytics />;
   if (tab === 'notifications') return <SystemNotificationsPage />;
   if (tab === 'settings') return <SystemSettingsPage />;
   if (tab === 'data') return <DataManagementPage />;

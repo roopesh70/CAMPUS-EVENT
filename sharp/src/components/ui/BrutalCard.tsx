@@ -7,14 +7,15 @@ interface BrutalCardProps {
   color?: string;
   className?: string;
   onClick?: () => void;
+  style?: React.CSSProperties;
 }
 
-export function BrutalCard({ children, color = 'white', className = '', onClick }: BrutalCardProps) {
+export function BrutalCard({ children, color = 'white', className = '', onClick, style }: BrutalCardProps) {
   return (
     <div
       onClick={onClick}
       className={`border-[2.5px] border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all cursor-pointer p-4 rounded-[1.25rem] overflow-hidden ${className}`}
-      style={{ backgroundColor: color }}
+      style={{ backgroundColor: color, ...style }}
     >
       {children}
     </div>
