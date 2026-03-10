@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useEvents } from '@/hooks/useEvents';
 import { useVenues } from '@/hooks/useVenues';
 import { useTasks } from '@/hooks/useTasks';
+import { useCloudinary } from '@/hooks/useCloudinary';
 import { useUIStore } from '@/stores/uiStore';
 import type { CampusEvent, EventCategory } from '@/types';
 import { Timestamp } from 'firebase/firestore';
@@ -118,22 +119,36 @@ export function CreateEventFlow() {
   const { profile } = useAuthStore();
   const { events: allEvents, createEvent, fetchPublicEvents } = useEvents();
   const { venues, fetchVenues } = useVenues();
+  const { uploadImage, uploading, progress: uploadProgress } = useCloudinary();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
+  const [alternatives, setAlternatives] = useState<string[]>([]);
 
-  // Form state
+  // Form state — PRD 5.2.1 complete
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<EventCategory>('technical');
-  const [description, setDescription] = useState('');
+  const [department, setDepartment] = useState(profile?.department || '');
+  const [targetAudience, setTargetAudience] = useState('');
+  const [expectedAttendance, setExpectedAttendance] = useState('');
   const [venueId, setVenueId] = useState('');
   const [venueName, setVenueName] = useState('');
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [capacity, setCapacity] = useState('');
+  const [regDeadline, setRegDeadline] = useState('');
   const [resources, setResources] = useState<string[]>([]);
+  const [posterFile, setPosterFile] = useState<File | null>(null);
+  const [posterPreview, setPosterPreview] = useState('');
+  const [description, setDescription] = useState('');
+  const [coOrganizers, setCoOrganizers] = useState('');
+  const [contactEmail, setContactEmail] = useState(profile?.email || '');
+  const [contactPhone, setContactPhone] = useState('');
+  const [budget, setBudget] = useState('');
+  const [eligDepts, setEligDepts] = useState<string[]>([]);
+  const [eligYears, setEligYears] = useState<number[]>([]);
 
   useEffect(() => { fetchVenues(); fetchPublicEvents(); }, [fetchVenues, fetchPublicEvents]);
 
@@ -141,28 +156,45 @@ export function CreateEventFlow() {
     setResources(prev => prev.includes(res) ? prev.filter(r => r !== res) : [...prev, res]);
   };
 
-  // Check for venue/time conflicts
+  const handlePosterSelect = (file: File) => {
+    setPosterFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setPosterPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  // Conflict detection + suggested alternatives
   const checkConflicts = () => {
     if (!venueId || !date || !startTime || !endTime) return null;
     const newStart = new Date(`${date}T${startTime}`).getTime();
     const newEnd = new Date(`${date}T${endTime}`).getTime();
 
+    let conflictMsg: string | null = null;
+    const busyVenueIds = new Set<string>();
+
     for (const evt of allEvents) {
-      if (evt.venueId !== venueId) continue;
       if (evt.status === 'rejected' || evt.status === 'draft') continue;
       const eStart = evt.startTime?.toDate?.().getTime() || 0;
       const eEnd = evt.endTime?.toDate?.().getTime() || 0;
-      // Check overlap
       if (newStart < eEnd && newEnd > eStart) {
-        return `Conflicts with "${evt.title}" at the same venue`;
+        busyVenueIds.add(evt.venueId);
+        if (evt.venueId === venueId) {
+          conflictMsg = `Conflicts with "${evt.title}" at the same venue`;
+        }
       }
     }
-    return null;
+
+    // Suggest available venues
+    const available = venues
+      .filter(v => v.isActive && !busyVenueIds.has(v.id) && v.id !== venueId)
+      .map(v => v.name)
+      .slice(0, 3);
+    setAlternatives(available);
+    return conflictMsg;
   };
 
-  // Run conflict check when venue/time step is completed
   useEffect(() => {
-    if (step === 3 && venueId && date) {
+    if (step === 5 && venueId && date) {
       setConflict(checkConflicts());
     }
   }, [step]);
@@ -170,6 +202,16 @@ export function CreateEventFlow() {
   const handleSubmit = async () => {
     if (!profile) return;
     setSubmitting(true);
+
+    // Upload poster to Cloudinary if selected
+    let posterUrl = '';
+    if (posterFile) {
+      try {
+        posterUrl = await uploadImage(posterFile);
+      } catch {
+        posterUrl = posterPreview; // fallback to base64
+      }
+    }
 
     const startTs = Timestamp.fromDate(new Date(`${date}T${startTime || '09:00'}`));
     const endTs = Timestamp.fromDate(new Date(`${date}T${endTime || '17:00'}`));
@@ -182,16 +224,24 @@ export function CreateEventFlow() {
       organizerName: profile.name || profile.email,
       venueId,
       venueName,
-      department: profile.department || '',
+      department,
       startTime: startTs,
       endTime: endTs,
       capacity: parseInt(capacity) || 100,
       status: 'pending',
       outcomeStatus: null,
-      eligibility: { departments: [], years: [] },
+      eligibility: { departments: eligDepts, years: eligYears },
       resources,
-      posterUrl: '',
+      posterUrl,
       approvalComment: '',
+      // PRD 5.2.1 new fields
+      targetAudience,
+      expectedAttendance: parseInt(expectedAttendance) || 0,
+      coOrganizers,
+      contactEmail,
+      contactPhone,
+      budget,
+      ...(regDeadline ? { registrationDeadline: Timestamp.fromDate(new Date(`${regDeadline}T23:59`)) } : {}),
     });
 
     setSubmitting(false);
@@ -206,7 +256,7 @@ export function CreateEventFlow() {
         </div>
         <h2 className="text-2xl font-black uppercase italic">Event Submitted!</h2>
         <p className="text-[11px] font-bold opacity-60">Your event has been submitted for admin approval.</p>
-        <BrutalButton color={COLORS.yellow} onClick={() => { setSuccess(false); setStep(1); setTitle(''); setDescription(''); }}>
+        <BrutalButton color={COLORS.yellow} onClick={() => { setSuccess(false); setStep(1); setTitle(''); setDescription(''); setPosterFile(null); setPosterPreview(''); }}>
           Create Another
         </BrutalButton>
       </div>
@@ -227,9 +277,10 @@ export function CreateEventFlow() {
 
       <BrutalCard className="p-6 md:p-8 space-y-5 border-b-[8px] border-b-black">
         <h2 className="text-2xl font-black uppercase italic leading-none">
-          {['Event Details', 'Venue & Time', 'Resources', 'Description', 'Review & Submit'][step - 1]}
+          {['Event Details', 'Venue & Time', 'Resources & Media', 'Description & Contact', 'Review & Submit'][step - 1]}
         </h2>
 
+        {/* Step 1: Event Details */}
         {step === 1 && (
           <div className="grid grid-cols-1 gap-5 mt-2">
             <div className="space-y-1.5">
@@ -250,9 +301,24 @@ export function CreateEventFlow() {
                 <option value="seminar">Seminar</option>
               </select>
             </div>
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Department / Club Affiliation</label>
+              <BrutalInput placeholder="e.g. Computer Science Dept" value={department} onChange={e => setDepartment(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Target Audience</label>
+                <BrutalInput placeholder="e.g. All Students" value={targetAudience} onChange={e => setTargetAudience(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Expected Attendance</label>
+                <BrutalInput type="number" placeholder="e.g. 150" value={expectedAttendance} onChange={e => setExpectedAttendance(e.target.value)} />
+              </div>
+            </div>
           </div>
         )}
 
+        {/* Step 2: Venue & Time */}
         {step === 2 && (
           <div className="grid grid-cols-1 gap-5 mt-2">
             <div className="space-y-1.5">
@@ -283,53 +349,160 @@ export function CreateEventFlow() {
                 <BrutalInput type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
               </div>
             </div>
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Registration Deadline</label>
+              <BrutalInput type="date" value={regDeadline} onChange={e => setRegDeadline(e.target.value)} />
+              <p className="text-[8px] font-bold opacity-30 italic">Leave empty for no deadline</p>
+            </div>
           </div>
         )}
 
+        {/* Step 3: Resources & Media */}
         {step === 3 && (
-          <div className="grid grid-cols-1 gap-4 mt-2">
-            <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Resources Needed</label>
-            {['AV Equipment', 'Catering', 'Extra Seating', 'Stage Setup', 'Whiteboard', 'Projector'].map((res) => (
-              <label key={res} className="flex items-center gap-3 p-2.5 border-[2px] border-black rounded-xl hover:bg-yellow-50 cursor-pointer transition-colors">
-                <input type="checkbox" className="w-4 h-4 accent-yellow-400" checked={resources.includes(res)} onChange={() => toggleResource(res)} />
-                <span className="font-black uppercase text-[10px]">{res}</span>
-              </label>
-            ))}
+          <div className="grid grid-cols-1 gap-5 mt-2">
+            <div>
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Resources Needed</label>
+              <div className="grid grid-cols-1 gap-2 mt-2">
+                {['AV Equipment', 'Catering', 'Extra Seating', 'Stage Setup', 'Whiteboard', 'Projector'].map((res) => (
+                  <label key={res} className="flex items-center gap-3 p-2.5 border-[2px] border-black rounded-xl hover:bg-yellow-50 cursor-pointer transition-colors">
+                    <input type="checkbox" className="w-4 h-4 accent-yellow-400" checked={resources.includes(res)} onChange={() => toggleResource(res)} />
+                    <span className="font-black uppercase text-[10px]">{res}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Poster Upload */}
+            <div className="space-y-2">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Event Poster / Banner</label>
+              <div
+                className={`border-[2.5px] border-dashed border-black rounded-xl p-6 text-center cursor-pointer transition-colors ${posterPreview ? 'bg-green-50' : 'hover:bg-yellow-50'}`}
+                onClick={() => document.getElementById('poster-input')?.click()}
+                onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={e => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files[0]; if (f) handlePosterSelect(f); }}
+              >
+                {posterPreview ? (
+                  <div className="space-y-3">
+                    <img src={posterPreview} alt="Poster preview" className="max-h-48 mx-auto rounded-lg border-[2px] border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]" />
+                    <p className="text-[9px] font-black uppercase opacity-40">Click or drag to replace</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="w-12 h-12 border-[2px] border-black rounded-xl bg-yellow-400 mx-auto flex items-center justify-center text-xl">📷</div>
+                    <p className="text-[10px] font-black uppercase italic">Drop poster here or click to browse</p>
+                    <p className="text-[8px] font-bold opacity-30">JPG, PNG, WebP — max 10MB</p>
+                  </div>
+                )}
+              </div>
+              <input id="poster-input" type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handlePosterSelect(f); }} />
+              {uploading && (
+                <div className="w-full bg-slate-200 border-[2px] border-black rounded-full h-4 overflow-hidden">
+                  <div className="h-full bg-yellow-400 transition-all font-black text-[7px] flex items-center justify-center" style={{ width: `${uploadProgress}%` }}>
+                    {uploadProgress}%
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
+        {/* Step 4: Description & Contact */}
         {step === 4 && (
-          <div className="space-y-1.5 mt-2">
-            <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Full Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)}
-              className="w-full border-[2.5px] border-black p-3 font-bold text-xs h-32 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl focus:outline-none"
-              placeholder="Describe your event in detail..." />
+          <div className="grid grid-cols-1 gap-5 mt-2">
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Full Description</label>
+              <textarea value={description} onChange={e => setDescription(e.target.value)}
+                className="w-full border-[2.5px] border-black p-3 font-bold text-xs h-28 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl focus:outline-none"
+                placeholder="Describe your event in detail..." />
+            </div>
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Co-organizers</label>
+              <BrutalInput placeholder="e.g. Tech Club, Design Society" value={coOrganizers} onChange={e => setCoOrganizers(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Contact Email</label>
+                <BrutalInput placeholder="organizer@campus.edu" value={contactEmail} onChange={e => setContactEmail(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Contact Phone</label>
+                <BrutalInput placeholder="+91 9876543210" value={contactPhone} onChange={e => setContactPhone(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Budget Estimation (Optional)</label>
+              <BrutalInput placeholder="e.g. ₹5,000" value={budget} onChange={e => setBudget(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Eligibility — Departments</label>
+              <div className="flex flex-wrap gap-2">
+                {['Computer Science', 'Electronics', 'Mechanical', 'Civil', 'MBA', 'All Departments'].map(d => (
+                  <button key={d} onClick={() => { if (d === 'All Departments') { setEligDepts([]); } else { setEligDepts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]); }}}
+                    className={`border-[2px] border-black px-3 py-1 text-[8px] font-black uppercase rounded-xl transition-all ${d === 'All Departments' ? (eligDepts.length === 0 ? 'bg-yellow-400' : 'bg-white') : (eligDepts.includes(d) ? 'bg-teal-400' : 'bg-white')}`}>
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Eligibility — Years</label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4].map(y => (
+                  <button key={y} onClick={() => setEligYears(prev => prev.includes(y) ? prev.filter(x => x !== y) : [...prev, y])}
+                    className={`w-10 h-10 border-[2px] border-black font-black rounded-xl transition-all ${eligYears.includes(y) ? 'bg-teal-400' : 'bg-white'}`}>
+                    {y}
+                  </button>
+                ))}
+                <button onClick={() => setEligYears([])}
+                  className={`px-4 h-10 border-[2px] border-black font-black text-[8px] uppercase rounded-xl transition-all ${eligYears.length === 0 ? 'bg-yellow-400' : 'bg-white'}`}>
+                  All
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
+        {/* Step 5: Review & Submit */}
         {step === 5 && (
           <div className="mt-2 space-y-4">
             {conflict && (
-              <div className="border-[2.5px] border-red-600 rounded-xl p-4 bg-red-50">
+              <div className="border-[2.5px] border-red-600 rounded-xl p-4 bg-red-50 space-y-2">
                 <p className="text-[10px] font-black uppercase italic text-red-700">⚠ Scheduling Conflict: {conflict}</p>
-                <p className="text-[8px] font-bold opacity-50 mt-1">You can still submit, but the admin may reject due to this conflict.</p>
+                <p className="text-[8px] font-bold opacity-50">You can still submit, but the admin may reject due to this conflict.</p>
+                {alternatives.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-[8px] font-black uppercase opacity-60">💡 Available alternatives:</p>
+                    <div className="flex gap-1.5 mt-1">{alternatives.map(a => (
+                      <span key={a} className="bg-green-100 border-[1.5px] border-green-500 rounded-lg px-2 py-0.5 text-[8px] font-black">{a}</span>
+                    ))}</div>
+                  </div>
+                )}
               </div>
             )}
             <div className="border-[2.5px] border-black rounded-xl p-4 bg-yellow-50">
               <p className="text-[10px] font-black uppercase italic text-center">Review your event details before submitting</p>
             </div>
+            {posterPreview && (
+              <img src={posterPreview} alt="Event poster" className="max-h-40 mx-auto rounded-lg border-[2px] border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]" />
+            )}
             <div className="grid grid-cols-2 gap-3">
               {[
                 { l: 'Title', v: title || '—' },
                 { l: 'Category', v: category },
+                { l: 'Department', v: department || '—' },
                 { l: 'Venue', v: venueName || '—' },
                 { l: 'Date', v: date || '—' },
+                { l: 'Time', v: startTime && endTime ? `${startTime} — ${endTime}` : '—' },
                 { l: 'Capacity', v: capacity || '—' },
+                { l: 'Expected', v: expectedAttendance || '—' },
+                { l: 'Deadline', v: regDeadline || 'No deadline' },
                 { l: 'Resources', v: resources.join(', ') || 'None' },
+                { l: 'Co-organizers', v: coOrganizers || 'None' },
+                { l: 'Budget', v: budget || 'Not specified' },
               ].map((item) => (
                 <div key={item.l} className="border-[2px] border-black rounded-lg p-2.5">
                   <span className="text-[7px] font-black uppercase opacity-30 italic">{item.l}</span>
-                  <p className="text-[11px] font-black uppercase">{item.v}</p>
+                  <p className="text-[10px] font-black uppercase truncate">{item.v}</p>
                 </div>
               ))}
             </div>
@@ -342,8 +515,8 @@ export function CreateEventFlow() {
             &larr; Previous
           </button>
           {step === 5 ? (
-            <BrutalButton className="px-8" color={COLORS.green} onClick={handleSubmit} disabled={submitting}>
-              {submitting ? 'Submitting...' : 'Submit Event'}
+            <BrutalButton className="px-8" color={COLORS.green} onClick={handleSubmit} disabled={submitting || uploading}>
+              {submitting ? (uploading ? `Uploading... ${uploadProgress}%` : 'Submitting...') : 'Submit Event'}
             </BrutalButton>
           ) : (
             <BrutalButton className="px-8" onClick={() => setStep(step + 1)}>Continue</BrutalButton>

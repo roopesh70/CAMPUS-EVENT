@@ -878,6 +878,9 @@ export function TasksPage() {
   const [showForm, setShowForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newAssignee, setNewAssignee] = useState('');
+  const [newCategory, setNewCategory] = useState('general');
+  const [newShiftStart, setNewShiftStart] = useState('');
+  const [newShiftEnd, setNewShiftEnd] = useState('');
 
   useEffect(() => {
     if (profile?.uid) fetchOrganizerEvents(profile.uid);
@@ -891,12 +894,15 @@ export function TasksPage() {
     if (!newTitle || !selectedEvent || !profile) return;
     await createTask({
       eventId: selectedEvent,
-      title: newTitle,
+      title: `[${newCategory.toUpperCase()}] ${newTitle}${newShiftStart ? ` (${newShiftStart}–${newShiftEnd})` : ''}`,
       assignedTo: newAssignee || profile.name || 'Unassigned',
       status: 'pending',
     });
     setNewTitle('');
     setNewAssignee('');
+    setNewCategory('general');
+    setNewShiftStart('');
+    setNewShiftEnd('');
     setShowForm(false);
     fetchEventTasks(selectedEvent);
   };
@@ -928,6 +934,28 @@ export function TasksPage() {
           <h3 className="font-black uppercase text-sm italic">New Task</h3>
           <BrutalInput placeholder="Task title..." value={newTitle} onChange={e => setNewTitle(e.target.value)} />
           <BrutalInput placeholder="Assign to..." value={newAssignee} onChange={e => setNewAssignee(e.target.value)} />
+          <div className="space-y-1.5">
+            <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Category</label>
+            <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
+              className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+              <option value="general">General</option>
+              <option value="registration_desk">Registration Desk</option>
+              <option value="logistics">Logistics</option>
+              <option value="technical">Technical Setup</option>
+              <option value="hospitality">Hospitality</option>
+              <option value="cleanup">Cleanup</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Shift Start</label>
+              <BrutalInput type="time" value={newShiftStart} onChange={e => setNewShiftStart(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Shift End</label>
+              <BrutalInput type="time" value={newShiftEnd} onChange={e => setNewShiftEnd(e.target.value)} />
+            </div>
+          </div>
           <BrutalButton color={COLORS.teal} className="w-full py-2" onClick={handleCreate} disabled={!newTitle}>Create Task</BrutalButton>
         </BrutalCard>
       )}
@@ -1444,17 +1472,55 @@ export function SystemNotificationsPage() {
   );
 }
 
-/* ===== Admin: System Settings (static for now) ===== */
+/* ===== Admin: System Settings ===== */
 export function SystemSettingsPage() {
+  const { events, fetchAllEvents } = useEvents();
+  const [userCount, setUserCount] = useState(0);
+  const [regCount, setRegCount] = useState(0);
+
+  useEffect(() => {
+    fetchAllEvents();
+    queryDocs<{ id: string }>('users', []).then(u => setUserCount(u.length));
+    queryDocs<{ id: string }>('registrations', []).then(r => setRegCount(r.length));
+  }, [fetchAllEvents]);
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">System Settings</h2>
+
+      {/* Collection Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { l: 'Users', v: userCount, c: COLORS.teal },
+          { l: 'Events', v: events.length, c: COLORS.yellow },
+          { l: 'Registrations', v: regCount, c: COLORS.pink },
+          { l: 'Approved', v: events.filter(e => e.status === 'approved').length, c: COLORS.green },
+        ].map(s => (
+          <BrutalCard key={s.l} color={s.c} className="p-3 text-center border-b-[4px]">
+            <span className="text-[7px] font-black uppercase opacity-60">{s.l}</span>
+            <div className="text-xl font-black">{s.v}</div>
+          </BrutalCard>
+        ))}
+      </div>
+
       <BrutalCard className="p-6 space-y-4 border-b-[6px]">
         <h3 className="font-black uppercase text-sm italic">Event Categories</h3>
         <div className="flex flex-wrap gap-2">
           {['Technical', 'Cultural', 'Sports', 'Academic', 'Workshop', 'Seminar', 'Competition', 'Social'].map((cat) => (
             <div key={cat} className="flex items-center gap-2 border-[2px] border-black px-3 py-1.5 rounded-xl bg-white">
               <span className="font-black uppercase text-[9px]">{cat}</span>
+              <span className="text-[8px] font-bold opacity-30">{events.filter(e => e.category === cat.toLowerCase()).length}</span>
+            </div>
+          ))}
+        </div>
+      </BrutalCard>
+
+      <BrutalCard className="p-6 space-y-4 border-b-[6px]">
+        <h3 className="font-black uppercase text-sm italic">User Roles Distribution</h3>
+        <div className="flex gap-3">
+          {['student', 'organizer', 'admin'].map(role => (
+            <div key={role} className="border-[2px] border-black px-4 py-2 rounded-xl bg-white text-center">
+              <span className="text-[8px] font-black uppercase opacity-40 block">{role}</span>
             </div>
           ))}
         </div>
@@ -1463,10 +1529,13 @@ export function SystemSettingsPage() {
   );
 }
 
-/* ===== Admin: Data Management (static) ===== */
+/* ===== Admin: Data Management ===== */
 export function DataManagementPage() {
+  const { events, fetchAllEvents } = useEvents();
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState('');
+
+  useEffect(() => { fetchAllEvents(); }, [fetchAllEvents]);
 
   const handleSeed = async () => {
     setSeeding(true);
@@ -1478,6 +1547,21 @@ export function DataManagementPage() {
       setSeedResult('Seed failed');
     }
     setSeeding(false);
+  };
+
+  const exportEvents = () => {
+    const data = JSON.stringify(events.map(e => ({
+      id: e.id, title: e.title, category: e.category, status: e.status,
+      organizer: e.organizerName, venue: e.venueName, capacity: e.capacity,
+      registered: e.registeredCount, outcomeStatus: e.outcomeStatus,
+    })), null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'events_export.json';
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -1493,9 +1577,11 @@ export function DataManagementPage() {
           </BrutalButton>
         </BrutalCard>
         <BrutalCard className="p-6 border-b-[6px] space-y-4">
-          <h3 className="font-black uppercase text-sm italic">Export</h3>
-          <p className="text-[10px] font-bold opacity-60">Export data as JSON from Firestore.</p>
-          <BrutalButton color={COLORS.teal} className="w-full py-3">Export Events</BrutalButton>
+          <h3 className="font-black uppercase text-sm italic">Export Events</h3>
+          <p className="text-[10px] font-bold opacity-60">Export all events as JSON ({events.length} events).</p>
+          <BrutalButton color={COLORS.teal} className="w-full py-3" onClick={exportEvents}>
+            <FileText className="w-4 h-4" /> Export JSON
+          </BrutalButton>
         </BrutalCard>
       </div>
     </div>

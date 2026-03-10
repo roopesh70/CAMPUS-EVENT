@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Search, X, MapPin, Clock, Users, ArrowUpDown } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Search, X, MapPin, Clock, Users, ArrowUpDown, Share2, TrendingUp, Timer } from 'lucide-react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { BrutalInput } from '@/components/ui/BrutalInput';
@@ -23,11 +23,21 @@ export function ExploreEvents() {
   const [sortBy, setSortBy] = useState<'date' | 'popularity'>('date');
   const [regLoading, setRegLoading] = useState<string | null>(null);
   const [regSuccess, setRegSuccess] = useState<string[]>([]);
+  const [regId, setRegId] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
 
   useEffect(() => { fetchPublicEvents(); }, [fetchPublicEvents]);
 
   const categories = ['all', 'technical', 'cultural', 'sports', 'academic', 'workshop', 'competition', 'social', 'seminar'];
+
+  // Trending: top 3 by registrations
+  const trending = useMemo(() =>
+    [...events]
+      .filter(e => e.status === 'approved')
+      .sort((a, b) => (b.registeredCount || 0) - (a.registeredCount || 0))
+      .slice(0, 3),
+    [events]
+  );
 
   const filtered = events
     .filter(e => {
@@ -46,7 +56,6 @@ export function ExploreEvents() {
     if (!profile) return;
     setRegLoading(evt.id);
     const result = await registerForEvent(evt.id, evt.title, profile.uid, profile.name || '', profile.department || '', evt.capacity, Math.max(evt.registeredCount || 0, 0));
-    // Send notification to student
     await createNotification(
       profile.uid,
       result.status === 'confirmed' ? 'Registration Confirmed!' : 'Added to Waitlist',
@@ -58,12 +67,42 @@ export function ExploreEvents() {
     );
     setRegLoading(null);
     setRegSuccess(prev => [...prev, evt.id]);
-    setSelectedEvent(null);
+    setRegId(result.registrationId || result.id);
+  };
+
+  const handleShare = async (evt: CampusEvent) => {
+    const shareData = { title: evt.title, text: `Check out "${evt.title}" on SHARP!`, url: window.location.href };
+    if (navigator.share) {
+      try { await navigator.share(shareData); } catch {}
+    } else {
+      await navigator.clipboard.writeText(`${evt.title} — ${window.location.href}`);
+      alert('Link copied to clipboard!');
+    }
   };
 
   const catColor = (cat: string) => {
     const map: Record<string, string> = { technical: COLORS.teal, cultural: COLORS.pink, sports: COLORS.yellow, academic: COLORS.lavender, workshop: COLORS.teal, competition: COLORS.yellow, social: COLORS.pink, seminar: COLORS.lavender };
     return map[cat] || COLORS.teal;
+  };
+
+  // Countdown helper
+  const getCountdown = (evt: CampusEvent) => {
+    if (!evt.startTime?.toDate) return null;
+    const now = Date.now();
+    const start = evt.startTime.toDate().getTime();
+    const diff = start - now;
+    if (diff <= 0) return null;
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor((diff % 86400000) / 3600000);
+    const mins = Math.floor((diff % 3600000) / 60000);
+    if (days > 0) return `${days}d ${hours}h`;
+    return `${hours}h ${mins}m`;
+  };
+
+  // Deadline check
+  const isPastDeadline = (evt: CampusEvent) => {
+    if (!evt.registrationDeadline?.toDate) return false;
+    return Date.now() > evt.registrationDeadline.toDate().getTime();
   };
 
   const formatDate = (evt: CampusEvent) => {
@@ -84,6 +123,27 @@ export function ExploreEvents() {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">Explore Events</h2>
+
+      {/* Trending Section */}
+      {trending.length > 0 && !search && catFilter === 'all' && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-black uppercase italic flex items-center gap-1.5 opacity-60"><TrendingUp className="w-4 h-4" /> Trending Now</h3>
+          <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+            {trending.map((evt, i) => (
+              <div key={evt.id} onClick={() => setSelectedEvent(evt)}
+                className="min-w-[240px] border-[2.5px] border-black rounded-xl p-3 bg-gradient-to-br from-yellow-50 to-pink-50 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] cursor-pointer hover:shadow-none transition-all flex items-center gap-3">
+                <div className="w-10 h-10 bg-yellow-400 border-[2px] border-black rounded-lg flex items-center justify-center font-black text-lg shrink-0">
+                  {i === 0 ? '🔥' : i === 1 ? '⚡' : '✨'}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-[10px] font-black uppercase italic truncate">{evt.title}</h4>
+                  <p className="text-[8px] font-bold opacity-40">{Math.max(evt.registeredCount || 0, 0)} registered • {evt.category}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Search + Sort */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -148,18 +208,29 @@ export function ExploreEvents() {
 
       {/* Event Detail Modal */}
       {selectedEvent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => setSelectedEvent(null)}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setSelectedEvent(null); setRegId(null); }}>
           <div className="bg-[#FFFBEB] border-[3px] border-black rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            {/* Poster Banner */}
+            {selectedEvent.posterUrl && (
+              <img src={selectedEvent.posterUrl} alt="Event poster" className="w-full max-h-52 object-cover rounded-t-2xl border-b-[2.5px] border-black" />
+            )}
+
             {/* Header */}
-            <div className="border-b-[2.5px] border-black p-5 flex justify-between items-start bg-slate-50 rounded-t-2xl">
+            <div className="border-b-[2.5px] border-black p-5 flex justify-between items-start bg-slate-50">
               <div>
                 <div className="flex gap-2 mb-2">
                   <Badge text={selectedEvent.category} color={catColor(selectedEvent.category)} />
                   <Badge text={selectedEvent.status} color={selectedEvent.status === 'approved' ? COLORS.green : COLORS.yellow} />
+                  {getCountdown(selectedEvent) && (
+                    <span className="flex items-center gap-1 bg-orange-100 border-[1.5px] border-orange-400 rounded-lg px-2 py-0.5">
+                      <Timer className="w-3 h-3" />
+                      <span className="text-[8px] font-black">{getCountdown(selectedEvent)}</span>
+                    </span>
+                  )}
                 </div>
                 <h3 className="text-xl font-black uppercase italic">{selectedEvent.title}</h3>
               </div>
-              <button onClick={() => setSelectedEvent(null)} className="w-8 h-8 border-[2px] border-black rounded-lg bg-white flex items-center justify-center hover:bg-red-100 transition-colors">
+              <button onClick={() => { setSelectedEvent(null); setRegId(null); }} className="w-8 h-8 border-[2px] border-black rounded-lg bg-white flex items-center justify-center hover:bg-red-100 transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -221,16 +292,42 @@ export function ExploreEvents() {
                 </div>
               )}
 
+              {/* Registration Deadline */}
+              {selectedEvent.registrationDeadline?.toDate && (
+                <div className={`flex items-center gap-2 p-2 rounded-lg border-[1.5px] ${isPastDeadline(selectedEvent) ? 'border-red-400 bg-red-50' : 'border-teal-400 bg-teal-50'}`}>
+                  <Timer className="w-3.5 h-3.5" />
+                  <span className="text-[9px] font-black uppercase italic">
+                    {isPastDeadline(selectedEvent) ? '⛔ Registration Closed' : `Deadline: ${selectedEvent.registrationDeadline.toDate().toLocaleDateString()}`}
+                  </span>
+                </div>
+              )}
+
               {/* Register Button */}
-              {isAuthenticated && selectedEvent.status === 'approved' && !regSuccess.includes(selectedEvent.id) ? (
+              {isAuthenticated && selectedEvent.status === 'approved' && !regSuccess.includes(selectedEvent.id) && !isPastDeadline(selectedEvent) ? (
                 <BrutalButton className="w-full py-3 text-sm" color={COLORS.teal} disabled={regLoading === selectedEvent.id} onClick={() => handleRegister(selectedEvent)}>
                   {regLoading === selectedEvent.id ? 'Registering...' : `Register Now (${Math.max(selectedEvent.registeredCount || 0, 0)}/${selectedEvent.capacity})`}
                 </BrutalButton>
               ) : regSuccess.includes(selectedEvent.id) ? (
-                <BrutalButton className="w-full py-3 text-sm" color={COLORS.green} disabled>✓ You're Registered!</BrutalButton>
+                <div className="space-y-2">
+                  <BrutalButton className="w-full py-3 text-sm" color={COLORS.green} disabled>✓ You're Registered!</BrutalButton>
+                  {regId && (
+                    <div className="text-center p-2 bg-green-50 border-[2px] border-green-500 rounded-xl">
+                      <span className="text-[8px] font-black uppercase block opacity-40">Registration ID</span>
+                      <span className="text-sm font-black font-mono">{regId}</span>
+                    </div>
+                  )}
+                </div>
+              ) : isPastDeadline(selectedEvent) ? (
+                <BrutalButton className="w-full py-3 text-sm" color="#e5e7eb" disabled>Registration Closed</BrutalButton>
               ) : !isAuthenticated ? (
                 <BrutalButton className="w-full py-3 text-sm" color={COLORS.yellow}>Sign In to Register</BrutalButton>
               ) : null}
+
+              {/* Share Button */}
+              <button onClick={() => handleShare(selectedEvent)}
+                className="w-full flex items-center justify-center gap-2 border-[2px] border-black px-4 py-2 font-black uppercase text-[9px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic bg-white">
+                <Share2 className="w-3.5 h-3.5" /> Share Event
+              </button>
             </div>
           </div>
         </div>

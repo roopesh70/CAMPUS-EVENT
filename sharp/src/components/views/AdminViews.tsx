@@ -156,6 +156,7 @@ export function AdminApprovals() {
   const { profile } = useAuthStore();
   const { createNotification } = useNotifications(profile?.uid);
   const [tab, setTab] = useState<'pending' | 'history'>('pending');
+  const [comments, setComments] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (tab === 'pending') fetchEventsByStatus('pending');
@@ -163,19 +164,21 @@ export function AdminApprovals() {
   }, [tab, fetchEventsByStatus]);
 
   const handleApprove = async (evt: CampusEvent) => {
-    await updateEventStatus(evt.id, 'approved');
+    const comment = comments[evt.id] || '';
+    await updateEventStatus(evt.id, 'approved', comment);
     if (profile) {
       await logActivity(profile.uid, profile.name, 'admin', 'approved_event', evt.id, 'event');
-      await createNotification(evt.organizerId, 'Event Approved!', `Your event "${evt.title}" has been approved.`, 'approval', evt.id);
+      await createNotification(evt.organizerId, 'Event Approved!', `Your event "${evt.title}" has been approved.${comment ? ` Comment: ${comment}` : ''}`, 'approval', evt.id);
     }
     fetchEventsByStatus('pending');
   };
 
   const handleReject = async (evt: CampusEvent) => {
-    await updateEventStatus(evt.id, 'rejected', 'Rejected by admin');
+    const comment = comments[evt.id] || 'No reason provided';
+    await updateEventStatus(evt.id, 'rejected', comment);
     if (profile) {
       await logActivity(profile.uid, profile.name, 'admin', 'rejected_event', evt.id, 'event');
-      await createNotification(evt.organizerId, 'Event Rejected', `Your event "${evt.title}" has been rejected.`, 'approval', evt.id);
+      await createNotification(evt.organizerId, 'Event Rejected', `Your event "${evt.title}" was rejected. Reason: ${comment}`, 'approval', evt.id);
     }
     fetchEventsByStatus('pending');
   };
@@ -205,11 +208,23 @@ export function AdminApprovals() {
                 </div>
                 <h4 className="text-lg font-black uppercase italic leading-none">{evt.title}</h4>
                 <p className="text-[10px] font-bold opacity-60 leading-tight line-clamp-2">{evt.description || 'No description provided.'}</p>
+                {evt.approvalComment && tab === 'history' && (
+                  <p className="text-[9px] font-bold opacity-50 italic bg-yellow-50 border-[1.5px] border-yellow-400 rounded-lg px-2 py-1 mt-1">💬 {evt.approvalComment}</p>
+                )}
               </div>
               {tab === 'pending' && (
-                <div className="flex sm:flex-col gap-2 w-full sm:w-auto">
-                  <BrutalButton color="#4ADE80" className="flex-1 px-4 py-2" onClick={() => handleApprove(evt)}>Approve</BrutalButton>
-                  <BrutalButton color="#F87171" className="flex-1 px-4 py-2" onClick={() => handleReject(evt)}>Reject</BrutalButton>
+                <div className="flex flex-col gap-2 w-full sm:w-auto">
+                  <input
+                    type="text"
+                    placeholder="Add comment..."
+                    value={comments[evt.id] || ''}
+                    onChange={e => setComments(prev => ({ ...prev, [evt.id]: e.target.value }))}
+                    className="border-[2px] border-black px-3 py-1.5 text-[9px] font-bold rounded-xl w-full outline-none"
+                  />
+                  <div className="flex gap-2">
+                    <BrutalButton color="#4ADE80" className="flex-1 px-4 py-2" onClick={() => handleApprove(evt)}>Approve</BrutalButton>
+                    <BrutalButton color="#F87171" className="flex-1 px-4 py-2" onClick={() => handleReject(evt)}>Reject</BrutalButton>
+                  </div>
                 </div>
               )}
               {tab === 'history' && (

@@ -66,6 +66,14 @@ export interface CampusEvent {
   posterUrl: string;
   approvalComment: string;
   conflictFlag: boolean;
+  // PRD 5.2.1 additions
+  registrationDeadline?: Timestamp;
+  coOrganizers?: string;
+  targetAudience?: string;
+  expectedAttendance?: number;
+  contactEmail?: string;
+  contactPhone?: string;
+  budget?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -95,6 +103,7 @@ export interface Registration {
   status: RegistrationStatus;
   attendanceStatus: AttendanceStatus;
   feedbackSubmitted: boolean;
+  registrationId: string;
 }
 
 /* ===== Certificates ===== */

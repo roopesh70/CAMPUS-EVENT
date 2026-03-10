@@ -1,16 +1,19 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, List, Grid3X3 } from 'lucide-react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { Badge } from '@/components/ui/Badge';
 import { COLORS } from '@/lib/constants';
 import { useEvents } from '@/hooks/useEvents';
+import { useRegistrations } from '@/hooks/useRegistrations';
+import { useAuthStore } from '@/stores/authStore';
 import type { CampusEvent } from '@/types';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const CATEGORIES = ['all', 'technical', 'cultural', 'sports', 'academic', 'workshop', 'competition', 'social', 'seminar'];
 
 const catColor = (cat: string) => {
   const map: Record<string, string> = { technical: COLORS.teal, cultural: COLORS.pink, sports: COLORS.yellow, academic: COLORS.lavender, workshop: COLORS.teal, competition: COLORS.yellow, social: COLORS.pink, seminar: COLORS.lavender };
@@ -19,19 +22,33 @@ const catColor = (cat: string) => {
 
 export function CalendarView() {
   const { events, fetchPublicEvents } = useEvents();
+  const { registrations, fetchUserRegistrations } = useRegistrations();
+  const { profile, isAuthenticated } = useAuthStore();
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [catFilter, setCatFilter] = useState('all');
+  const [viewMode, setViewMode] = useState<'month' | 'list'>('month');
+  const [showMine, setShowMine] = useState(false);
 
   useEffect(() => { fetchPublicEvents(); }, [fetchPublicEvents]);
+  useEffect(() => { if (profile?.uid && showMine) fetchUserRegistrations(profile.uid); }, [profile?.uid, showMine, fetchUserRegistrations]);
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfWeek = new Date(year, month, 1).getDay();
 
+  const registeredEventIds = useMemo(() => new Set(registrations.map(r => r.eventId)), [registrations]);
+
+  const filteredEvents = useMemo(() => {
+    let evts = catFilter === 'all' ? events : events.filter(e => e.category === catFilter);
+    if (showMine && isAuthenticated) evts = evts.filter(e => registeredEventIds.has(e.id));
+    return evts;
+  }, [events, catFilter, showMine, isAuthenticated, registeredEventIds]);
+
   // Map events to their day number for this month
   const eventsByDay = useMemo(() => {
     const map: Record<number, CampusEvent[]> = {};
-    events.forEach(evt => {
+    filteredEvents.forEach(evt => {
       if (!evt.startTime?.toDate) return;
       const d = evt.startTime.toDate();
       if (d.getFullYear() === year && d.getMonth() === month) {
@@ -41,7 +58,7 @@ export function CalendarView() {
       }
     });
     return map;
-  }, [events, year, month]);
+  }, [filteredEvents, year, month]);
 
   const prev = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); setSelectedDay(null); };
   const next = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); setSelectedDay(null); };
@@ -56,14 +73,33 @@ export function CalendarView() {
           {MONTHS[month]} {year}
         </h2>
         <div className="flex gap-2">
+          {isAuthenticated && (
+            <BrutalButton color={showMine ? COLORS.teal : 'white'} className="px-3 h-9 text-[8px]" onClick={() => setShowMine(!showMine)}>
+              {showMine ? 'My Events' : 'All Events'}
+            </BrutalButton>
+          )}
+          <BrutalButton color={viewMode === 'list' ? COLORS.yellow : 'white'} className="w-9 h-9" onClick={() => setViewMode(viewMode === 'month' ? 'list' : 'month')}>
+            {viewMode === 'month' ? <List className="w-4 h-4" /> : <Grid3X3 className="w-4 h-4" />}
+          </BrutalButton>
           <BrutalButton color="white" className="w-9 h-9" onClick={prev}><ChevronLeft className="w-4 h-4" /></BrutalButton>
           <BrutalButton color={COLORS.yellow} className="px-4 h-9 text-[9px]" onClick={() => { setYear(new Date().getFullYear()); setMonth(new Date().getMonth()); setSelectedDay(null); }}>Today</BrutalButton>
           <BrutalButton color="white" className="w-9 h-9" onClick={next}><ChevronRight className="w-4 h-4" /></BrutalButton>
         </div>
       </div>
 
-      {/* Calendar Grid */}
-      <BrutalCard className="p-0 border-[2.5px] overflow-hidden shadow-[5px_5px_0px_0px_rgba(0,0,0,1)]">
+      {/* Category Filter */}
+      <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+        {CATEGORIES.map(cat => (
+          <button key={cat} onClick={() => setCatFilter(cat)}
+            className={`whitespace-nowrap border-[2px] border-black px-3 py-1 font-black uppercase text-[8px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${catFilter === cat ? 'bg-yellow-400' : 'bg-white'}`}>
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Calendar Grid - Month View */}
+      {viewMode === 'month' && (
+        <BrutalCard className="p-0 border-[2.5px] overflow-hidden shadow-[5px_5px_0px_0px_rgba(0,0,0,1)]">
         {/* Day Headers */}
         <div className="grid grid-cols-7 border-b-[2.5px] border-black font-black uppercase text-[8px] bg-black text-white italic tracking-widest">
           {DAYS.map((d) => (
@@ -96,9 +132,11 @@ export function CalendarView() {
                     {dayEvents.slice(0, 2).map((evt) => (
                       <div
                         key={evt.id}
-                        className="mt-1 text-[6.5px] font-black uppercase p-1 border-[1.5px] border-black rounded-md leading-tight shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] truncate"
+                        className="mt-1 text-[6.5px] font-black uppercase p-1 border-[1.5px] border-black rounded-md leading-tight shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] truncate flex items-center gap-0.5"
                         style={{ backgroundColor: catColor(evt.category) }}
                       >
+                        {evt.outcomeStatus === 'success' && <span>✅</span>}
+                        {evt.outcomeStatus === 'failed' && <span>❌</span>}
                         {evt.title}
                       </div>
                     ))}
@@ -112,6 +150,50 @@ export function CalendarView() {
           })}
         </div>
       </BrutalCard>
+      )}
+
+      {/* List View */}
+      {viewMode === 'list' && (
+        <div className="space-y-2">
+          {(() => {
+            const monthEvents = filteredEvents
+              .filter(e => {
+                if (!e.startTime?.toDate) return false;
+                const d = e.startTime.toDate();
+                return d.getFullYear() === year && d.getMonth() === month;
+              })
+              .sort((a, b) => {
+                const at = a.startTime?.toDate?.().getTime() || 0;
+                const bt = b.startTime?.toDate?.().getTime() || 0;
+                return at - bt;
+              });
+            if (monthEvents.length === 0) {
+              return <BrutalCard className="p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">No events this month</p></BrutalCard>;
+            }
+            return monthEvents.map(evt => {
+              const time = evt.startTime?.toDate ? evt.startTime.toDate().toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' }) : '';
+              const day = evt.startTime?.toDate ? evt.startTime.toDate().getDate() : 0;
+              return (
+                <div key={evt.id} className="flex items-center gap-4 bg-white border-[2px] border-black rounded-xl p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all">
+                  <div className="w-10 h-12 border-[2px] border-black rounded-lg flex flex-col items-center justify-center shrink-0" style={{ backgroundColor: catColor(evt.category) }}>
+                    <span className="text-lg font-black leading-none">{day}</span>
+                    <span className="text-[6px] font-black uppercase">{MONTHS[month].slice(0, 3)}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <Badge text={evt.category} color={catColor(evt.category)} />
+                      {evt.outcomeStatus && <Badge text={evt.outcomeStatus} color={evt.outcomeStatus === 'success' ? COLORS.green : COLORS.red} />}
+                    </div>
+                    <h4 className="font-black uppercase text-[11px] italic truncate">{evt.title}</h4>
+                    <p className="text-[8px] font-bold opacity-40">{evt.venueName} • {time} • {Math.max(evt.registeredCount || 0, 0)}/{evt.capacity}</p>
+                  </div>
+                  <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.yellow} />
+                </div>
+              );
+            });
+          })()}
+        </div>
+      )}
 
       {/* Selected Day Detail */}
       {selectedDay && (
@@ -129,9 +211,14 @@ export function CalendarView() {
                   <Badge text={evt.category} color={catColor(evt.category)} />
                   <div className="flex-1">
                     <h4 className="font-black uppercase text-[11px] italic">{evt.title}</h4>
-                    <p className="text-[8px] font-bold opacity-40">{evt.venueName} • {time} • {evt.registeredCount}/{evt.capacity} registered</p>
+                    <p className="text-[8px] font-bold opacity-40">{evt.venueName} • {time} • {Math.max(evt.registeredCount || 0, 0)}/{evt.capacity} registered</p>
                   </div>
-                  <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.yellow} />
+                  <div className="flex gap-1">
+                    {evt.outcomeStatus && (
+                      <Badge text={evt.outcomeStatus} color={evt.outcomeStatus === 'success' ? COLORS.green : COLORS.red} />
+                    )}
+                    <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.yellow} />
+                  </div>
                 </div>
               );
             })
