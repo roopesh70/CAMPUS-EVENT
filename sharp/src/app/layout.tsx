@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import ToastNotifications from "@/components/notifications/ToastNotifications";
 
 export const metadata: Metadata = {
   title: "SHARP — Campus Event Management System",
@@ -17,6 +18,7 @@ export default function RootLayout({
       <body className="antialiased">
         <AuthProvider>
           {children}
+          <ToastNotifications />
         </AuthProvider>
       </body>
     </html>
