@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { BrutalInput } from '@/components/ui/BrutalInput';
@@ -115,11 +115,24 @@ export function AuthPage() {
 export function MyRegistrations() {
   const { profile } = useAuthStore();
   const { registrations, fetchUserRegistrations, cancelRegistration } = useRegistrations();
-  const [tab, setTab] = useState('all');
+  const [tab, setTab] = useState('confirmed');
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile?.uid) fetchUserRegistrations(profile.uid);
   }, [profile?.uid, fetchUserRegistrations]);
+
+  const handleCancel = async (regId: string, eventId: string) => {
+    if (cancellingId) return; // prevent concurrent cancels
+    setCancellingId(regId);
+    const result = await cancelRegistration(regId, eventId, profile?.uid);
+    if (result?.error) {
+      console.warn('Cancel failed:', result.error);
+    }
+    // Refresh list from Firestore to reflect true state
+    if (profile?.uid) await fetchUserRegistrations(profile.uid);
+    setCancellingId(null);
+  };
 
   const filtered = tab === 'all' ? registrations : registrations.filter(r => r.status === tab);
 
@@ -143,13 +156,24 @@ export function MyRegistrations() {
               <div>
                 <h4 className="font-black uppercase text-[12px] italic">{reg.eventTitle || 'Event'}</h4>
                 <p className="text-[8px] font-bold opacity-40 uppercase">
-                  {reg.registrationTime?.toDate ? reg.registrationTime.toDate().toLocaleDateString() : ''} • {reg.id?.slice(0, 8)}
+                  {reg.registrationTime?.toDate ? reg.registrationTime.toDate().toLocaleDateString() : ''}
+                  {reg.registrationId ? ` • ${reg.registrationId}` : ` • ${reg.id?.slice(0, 8)}`}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Badge text={reg.status} color={reg.status === 'confirmed' ? COLORS.green : reg.status === 'cancelled' ? COLORS.red : COLORS.yellow} />
+                <Badge text={reg.status} color={reg.status === 'confirmed' ? COLORS.green : reg.status === 'waitlisted' ? COLORS.yellow : reg.status === 'cancelled' ? COLORS.red : COLORS.teal} />
+                {reg.attendanceStatus && reg.attendanceStatus !== 'pending' && (
+                  <Badge text={reg.attendanceStatus} color={reg.attendanceStatus === 'present' ? COLORS.green : '#e5e7eb'} />
+                )}
                 {reg.status === 'confirmed' && (
-                  <BrutalButton color={COLORS.red} className="px-3 py-1 text-[8px]" onClick={() => cancelRegistration(reg.id, reg.eventId)}>Cancel</BrutalButton>
+                  <BrutalButton
+                    color={COLORS.red}
+                    className="px-3 py-1 text-[8px]"
+                    disabled={cancellingId === reg.id}
+                    onClick={() => handleCancel(reg.id, reg.eventId)}
+                  >
+                    {cancellingId === reg.id ? 'Cancelling…' : 'Cancel'}
+                  </BrutalButton>
                 )}
               </div>
             </BrutalCard>
@@ -291,17 +315,34 @@ export function CertificatesPage() {
 export function FeedbackPage() {
   const { profile } = useAuthStore();
   const { events, fetchPublicEvents } = useEvents();
+  const { registrations: userRegs, fetchUserRegistrations } = useRegistrations();
   const { submitFeedback } = useFeedback();
+  const { createNotification } = useNotifications(profile?.uid);
   const [eventId, setEventId] = useState('');
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [comment, setComment] = useState('');
   const [anonymous, setAnonymous] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => { fetchPublicEvents(); }, [fetchPublicEvents]);
+  useEffect(() => {
+    fetchPublicEvents();
+    if (profile?.uid) fetchUserRegistrations(profile.uid);
+  }, [fetchPublicEvents, fetchUserRegistrations, profile?.uid]);
+
+  // Derive attended events
+  const attendedEvents = useMemo(() => {
+    const attendedIds = new Set(
+      userRegs
+        .filter(r => r.status === 'confirmed' && r.attendanceStatus === 'present' && !r.feedbackSubmitted)
+        .map(r => r.eventId)
+    );
+    return events.filter(e => attendedIds.has(e.id));
+  }, [events, userRegs]);
 
   const handleSubmit = async () => {
     if (!profile || !eventId) return;
+    setSubmitting(true);
     const ratingsObj = {
       content: ratings['Content Quality'] || 0,
       organization: ratings['Organization'] || 0,
@@ -309,8 +350,17 @@ export function FeedbackPage() {
       speaker: 0,
       overall: ratings['Overall'] || 0,
     };
-    await submitFeedback(eventId, anonymous ? null : profile.uid, ratingsObj, comment, anonymous);
+    const result = await submitFeedback(eventId, anonymous ? null : profile.uid, ratingsObj, comment, anonymous);
+    setSubmitting(false);
+    
+    if (result.error) {
+      console.error('[Feedback error]', result.error);
+      await createNotification(profile.uid, 'Feedback Failed', result.error, 'system', eventId);
+      return;
+    }
+    
     setSubmitted(true);
+    if (profile?.uid) fetchUserRegistrations(profile.uid); // refresh local feedbackSubmitted state
   };
 
   if (submitted) {
@@ -331,11 +381,17 @@ export function FeedbackPage() {
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-pink-400 underline-offset-4">Feedback</h2>
       <BrutalCard className="p-6 space-y-5 border-b-[6px]">
         <div className="space-y-1.5">
-          <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Select Event</label>
-          <select value={eventId} onChange={e => setEventId(e.target.value)} className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
-            <option value="">Choose an event...</option>
-            {events.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
-          </select>
+          <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Select Attended Event</label>
+          {attendedEvents.length === 0 ? (
+            <div className="border-[2.5px] border-black p-3 bg-slate-50 text-[10px] font-bold opacity-50 rounded-xl italic">
+              No eligible events found. You must attend an event before leaving feedback.
+            </div>
+          ) : (
+            <select value={eventId} onChange={e => setEventId(e.target.value)} className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+              <option value="">Choose an attended event...</option>
+              {attendedEvents.map((e: any) => <option key={e.id} value={e.id}>{e.title}</option>)}
+            </select>
+          )}
         </div>
         {['Content Quality', 'Organization', 'Venue & Facilities', 'Overall'].map((dim) => (
           <div key={dim} className="flex items-center justify-between">
@@ -356,7 +412,9 @@ export function FeedbackPage() {
           <input type="checkbox" className="w-4 h-4 accent-yellow-400" checked={anonymous} onChange={e => setAnonymous(e.target.checked)} />
           <span className="font-black uppercase text-[9px] italic opacity-60">Submit Anonymously</span>
         </div>
-        <BrutalButton className="w-full py-3" color={COLORS.yellow} onClick={handleSubmit} disabled={!eventId}><Send className="w-4 h-4" /> Submit Feedback</BrutalButton>
+        <BrutalButton className="w-full py-3" color={COLORS.yellow} onClick={handleSubmit} disabled={!eventId || submitting}>
+          <Send className="w-4 h-4" /> {submitting ? 'Submitting...' : 'Submit Feedback'}
+        </BrutalButton>
       </BrutalCard>
     </div>
   );
@@ -1534,6 +1592,8 @@ export function DataManagementPage() {
   const { events, fetchAllEvents } = useEvents();
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState('');
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanLog, setCleanLog] = useState<string[]>([]);
 
   useEffect(() => { fetchAllEvents(); }, [fetchAllEvents]);
 
@@ -1564,6 +1624,69 @@ export function DataManagementPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleCleanDuplicates = useCallback(async () => {
+    setCleaning(true);
+    setCleanLog(['🔍 Fetching all registrations...']);
+
+    // Fetch all registrations
+    const allRegs = await queryDocs<Registration>('registrations', []);
+    setCleanLog(prev => [...prev, `   Found ${allRegs.length} total registration(s).`]);
+
+    // Group by userId + eventId
+    const groups: Record<string, Registration[]> = {};
+    for (const reg of allRegs) {
+      if (!reg.userId || !reg.eventId) continue;
+      const key = `${reg.userId}__${reg.eventId}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(reg);
+    }
+
+    const toDelete: Registration[] = [];
+    for (const [, regs] of Object.entries(groups)) {
+      const active = regs.filter(r => r.status === 'confirmed' || r.status === 'waitlisted');
+      if (active.length <= 1) continue;
+      // Sort oldest first — keep the first, delete the rest
+      active.sort((a, b) =>
+        ((a.registrationTime as unknown as { seconds: number })?.seconds || 0) -
+        ((b.registrationTime as unknown as { seconds: number })?.seconds || 0)
+      );
+      const [, ...dupes] = active;
+      toDelete.push(...dupes);
+    }
+
+    if (toDelete.length === 0) {
+      setCleanLog(prev => [...prev, '✅ No duplicate registrations found! Database is already clean.']);
+      setCleaning(false);
+      return;
+    }
+
+    setCleanLog(prev => [...prev, `⚠️  Found ${toDelete.length} duplicate registration(s) to remove.`]);
+
+    // Delete each duplicate and track affected events
+    const affectedEventIds = new Set<string>();
+    for (const reg of toDelete) {
+      await updateDocument('registrations', reg.id, { status: 'cancelled' });
+      affectedEventIds.add(reg.eventId);
+    }
+    setCleanLog(prev => [...prev, `🗑️  Cancelled ${toDelete.length} duplicate(s).`]);
+
+    // Recalculate registeredCount for each affected event
+    setCleanLog(prev => [...prev, `🔧 Recalculating counts for ${affectedEventIds.size} event(s)...`]);
+    const freshRegs = await queryDocs<Registration>('registrations', []);
+    for (const eventId of affectedEventIds) {
+      const confirmedCount = freshRegs.filter(r => r.eventId === eventId && r.status === 'confirmed').length;
+      await updateDocument('events', eventId, { registeredCount: confirmedCount });
+      const evt = events.find(e => e.id === eventId);
+      setCleanLog(prev => [...prev, `   "${evt?.title || eventId}": registeredCount → ${confirmedCount}`]);
+    }
+
+    setCleanLog(prev => [...prev,
+      `🎉 Done! Removed ${toDelete.length} duplicate(s) across ${affectedEventIds.size} event(s).`
+    ]);
+    fetchAllEvents(); // refresh event list
+    setCleaning(false);
+  }, [events, fetchAllEvents]);
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">Data Management</h2>
@@ -1583,10 +1706,29 @@ export function DataManagementPage() {
             <FileText className="w-4 h-4" /> Export JSON
           </BrutalButton>
         </BrutalCard>
+
+        {/* Clean Duplicate Registrations */}
+        <BrutalCard className="p-6 border-b-[6px] space-y-4 lg:col-span-2 border-l-[6px] border-l-red-500">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-black uppercase text-sm italic text-red-700">🧹 Clean Duplicate Registrations</h3>
+              <p className="text-[10px] font-bold opacity-60">Find students registered multiple times to the same event, keep oldest, cancel duplicates, and fix participant counts.</p>
+            </div>
+            <BrutalButton color={COLORS.red} className="px-5 py-2 text-[10px] shrink-0" onClick={handleCleanDuplicates} disabled={cleaning}>
+              {cleaning ? 'Cleaning...' : 'Run Cleanup'}
+            </BrutalButton>
+          </div>
+          {cleanLog.length > 0 && (
+            <div className="bg-slate-900 text-green-400 font-mono text-[9px] rounded-xl p-4 space-y-1 max-h-48 overflow-y-auto border-[2px] border-black">
+              {cleanLog.map((line, i) => <div key={i}>{line}</div>)}
+            </div>
+          )}
+        </BrutalCard>
       </div>
     </div>
   );
 }
+
 
 /* ===== Admin: Activity Logs ===== */
 export function ActivityLogsPage() {

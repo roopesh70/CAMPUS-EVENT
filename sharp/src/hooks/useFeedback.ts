@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { queryDocs, addDocument, where, orderBy } from '@/lib/firestore';
+import { queryDocs, addDocument, updateDocument, where, orderBy } from '@/lib/firestore';
 import type { Feedback } from '@/types';
 
 export function useFeedback() {
@@ -26,6 +26,24 @@ export function useFeedback() {
     comment: string,
     anonymous: boolean
   ) => {
+    // ─── Guard: Must have attended the event to submit feedback ───
+    if (userId) {
+      const existing = await queryDocs<any>('registrations', [
+        where('eventId', '==', eventId),
+        where('userId', '==', userId),
+      ]);
+      const reg = existing[0];
+      if (!reg || reg.attendanceStatus !== 'present') {
+        return { error: 'You must have attended this event to submit feedback' };
+      }
+      
+      // Also prevent duplicate feedback
+      if (reg.feedbackSubmitted) {
+        return { error: 'You have already submitted feedback for this event' };
+      }
+    }
+    // ──────────────────────────────────────────────────────────────
+
     const docRef = await addDocument('feedback', {
       eventId,
       userId: anonymous ? null : userId,
@@ -33,7 +51,19 @@ export function useFeedback() {
       comment,
       anonymous,
     });
-    return docRef.id;
+
+    if (userId) {
+      // Mark feedback as submitted in the registration doc
+      const existing = await queryDocs<any>('registrations', [
+        where('eventId', '==', eventId),
+        where('userId', '==', userId),
+      ]);
+      if (existing.length > 0) {
+        await updateDocument('registrations', existing[0].id, { feedbackSubmitted: true });
+      }
+    }
+
+    return { id: docRef.id };
   }, []);
 
   return { feedbackList, loading, fetchEventFeedback, submitFeedback };

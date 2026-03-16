@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Calendar, Award, BarChart2, CheckCircle } from 'lucide-react';
+import { Calendar, Award, BarChart2, Sparkles } from 'lucide-react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { Badge } from '@/components/ui/Badge';
@@ -41,7 +41,6 @@ export function StudentDashboard() {
   const attendanceRate = regCount > 0 ? Math.round((attendedCount / regCount) * 100) : 0;
   const recentNotifs = notifications.slice(0, 4);
 
-  // Registered event IDs for quick lookup
   const registeredEventIds = useMemo(() => new Set(registrations.map(r => r.eventId)), [registrations]);
 
   // Past events the student was registered for
@@ -51,6 +50,71 @@ export function StudentDashboard() {
       .filter(e => registeredEventIds.has(e.id) && e.startTime?.toDate && e.startTime.toDate() < now)
       .slice(0, 5);
   }, [events, registeredEventIds]);
+
+  // Story 3 — Auto-reminder notifications for upcoming registered events
+  const { createNotification } = useNotifications(profile?.uid);
+  useEffect(() => {
+    if (!profile?.uid || registrations.length === 0 || events.length === 0) return;
+    const now = Date.now();
+    registrations.forEach(reg => {
+      if (reg.status !== 'confirmed') return;
+      const evt = events.find(e => e.id === reg.eventId);
+      if (!evt?.startTime?.toDate) return;
+      const start = evt.startTime.toDate().getTime();
+      const diff = start - now;
+      // Only remind for future events within 24 hours
+      if (diff <= 0 || diff > 24 * 3600 * 1000) return;
+      const label = diff < 3 * 3600 * 1000 ? '3 hours' : '24 hours';
+      // Store a flag in sessionStorage to avoid spamming on every render
+      const key = `reminder_${reg.eventId}_${label}`;
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+      createNotification(
+        profile.uid,
+        `⏰ Reminder: ${evt.title}`,
+        `Your event "${evt.title}" starts in ${label}! Don't forget to attend.`,
+        'reminder',
+        evt.id
+      );
+    });
+  }, [registrations, events, profile?.uid, createNotification]);
+
+  // Story 5 — Interest-based recommendations
+  // Find top categories from past registrations, then suggest events not yet registered
+  const recommendations = useMemo(() => {
+    if (registrations.length === 0) {
+      // No history — show top 3 by registration count
+      return events
+        .filter(e => e.status === 'approved' && !registeredEventIds.has(e.id))
+        .sort((a, b) => (b.registeredCount || 0) - (a.registeredCount || 0))
+        .slice(0, 3);
+    }
+    // Count categories from registered events
+    const catCount: Record<string, number> = {};
+    registrations.forEach(reg => {
+      const evt = events.find(e => e.id === reg.eventId);
+      if (evt) catCount[evt.category] = (catCount[evt.category] || 0) + 1;
+    });
+    const topCats = Object.entries(catCount).sort((a, b) => b[1] - a[1]).map(([c]) => c);
+    // Get upcoming events from preferred categories that aren't registered
+    const now = new Date();
+    const recs = events.filter(e =>
+      e.status === 'approved' &&
+      !registeredEventIds.has(e.id) &&
+      e.startTime?.toDate && e.startTime.toDate() > now &&
+      topCats.includes(e.category)
+    ).slice(0, 3);
+    // Fallback to any upcoming if not enough
+    if (recs.length < 3) {
+      const extra = events.filter(e =>
+        e.status === 'approved' &&
+        !registeredEventIds.has(e.id) &&
+        !recs.some(r => r.id === e.id)
+      ).slice(0, 3 - recs.length);
+      return [...recs, ...extra];
+    }
+    return recs;
+  }, [events, registrations, registeredEventIds]);
 
   const formatDate = (ts: CampusEvent['startTime']) => {
     if (!ts?.toDate) return { day: '--', month: '---', time: '' };
@@ -146,6 +210,33 @@ export function StudentDashboard() {
                   </BrutalCard>
                 );
               })}
+            </div>
+          )}
+
+          {/* Story 5 — Recommended Events */}
+          {recommendations.length > 0 && (
+            <div className="space-y-3 mt-6">
+              <h3 className="text-xl font-black uppercase italic flex items-center gap-2">
+                <Sparkles className="w-5 h-5" /> Recommended For You
+              </h3>
+              {recommendations.map(evt => {
+                const catColors: Record<string, string> = { technical: COLORS.teal, cultural: COLORS.pink, sports: COLORS.yellow, academic: COLORS.lavender, workshop: COLORS.teal, competition: COLORS.yellow, social: COLORS.pink, seminar: COLORS.lavender };
+                const color = catColors[evt.category] || COLORS.teal;
+                return (
+                  <BrutalCard key={evt.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer border-l-[6px]" style={{ borderLeftColor: color }}
+                    onClick={() => setActiveTab('discover')}>
+                    <div className="w-9 h-9 rounded-lg border-[2px] border-black flex items-center justify-center shrink-0 text-md" style={{ backgroundColor: color }}>
+                      {evt.category === 'technical' ? '💻' : evt.category === 'cultural' ? '🎭' : evt.category === 'sports' ? '🏆' : evt.category === 'academic' ? '📚' : evt.category === 'workshop' ? '🔧' : '🎉'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-[11px] font-black uppercase italic truncate">{evt.title}</h4>
+                      <p className="text-[8px] font-bold opacity-40">{evt.category} • {Math.max(evt.registeredCount || 0, 0)}/{evt.capacity} registered</p>
+                    </div>
+                    <Badge text={evt.category} color={color} />
+                  </BrutalCard>
+                );
+              })}
+              <p className="text-[8px] font-bold opacity-30 italic text-center">Based on your event history</p>
             </div>
           )}
         </div>

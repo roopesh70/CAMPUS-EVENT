@@ -15,7 +15,7 @@ import type { CampusEvent } from '@/types';
 
 export function ExploreEvents() {
   const { events, fetchPublicEvents } = useEvents();
-  const { registerForEvent } = useRegistrations();
+  const { registerForEvent, fetchUserRegistrations, registrations: userRegs } = useRegistrations();
   const { createNotification } = useNotifications(useAuthStore.getState().profile?.uid);
   const { profile, isAuthenticated } = useAuthStore();
   const [search, setSearch] = useState('');
@@ -26,7 +26,22 @@ export function ExploreEvents() {
   const [regId, setRegId] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
 
-  useEffect(() => { fetchPublicEvents(); }, [fetchPublicEvents]);
+  // Load user's existing registrations from Firestore so Register button reflects real state
+  useEffect(() => {
+    fetchPublicEvents();
+    if (profile?.uid && isAuthenticated) {
+      fetchUserRegistrations(profile.uid);
+    }
+  }, [fetchPublicEvents, fetchUserRegistrations, profile?.uid, isAuthenticated]);
+
+  // Merge Firestore registrations + in-session new registrations for guard
+  const registeredEventIds = useMemo(() => {
+    const fromDB = new Set(userRegs.filter(r => r.status === 'confirmed' || r.status === 'waitlisted').map(r => r.eventId));
+    regSuccess.forEach(id => fromDB.add(id));
+    return fromDB;
+  }, [userRegs, regSuccess]);
+
+  const isRegisteredFor = (eventId: string) => registeredEventIds.has(eventId);
 
   const categories = ['all', 'technical', 'cultural', 'sports', 'academic', 'workshop', 'competition', 'social', 'seminar'];
 
@@ -52,10 +67,39 @@ export function ExploreEvents() {
       return at - bt;
     });
 
+  const handleOpenEvent = (evt: CampusEvent) => {
+    setSelectedEvent(evt);
+    const existingReg = userRegs.find(r => r.eventId === evt.id && (r.status === 'confirmed' || r.status === 'waitlisted'));
+    setRegId(existingReg ? (existingReg.registrationId || existingReg.id || null) : null);
+  };
+
   const handleRegister = async (evt: CampusEvent) => {
     if (!profile) return;
+    // Guard: don't register if already registered (UI defence)
+    if (isRegisteredFor(evt.id)) {
+      setRegLoading(null);
+      return;
+    }
     setRegLoading(evt.id);
-    const result = await registerForEvent(evt.id, evt.title, profile.uid, profile.name || '', profile.department || '', evt.capacity, Math.max(evt.registeredCount || 0, 0));
+    const result = await registerForEvent(
+      evt.id, evt.title, profile.uid,
+      profile.name || '', profile.department || '',
+      evt.capacity, Math.max(evt.registeredCount || 0, 0)
+    );
+    setRegLoading(null);
+
+    if (result.error) {
+      console.error('[Registration block]', result.error);
+      await createNotification(profile.uid, 'Registration Failed', result.error, 'system', evt.id);
+      return;
+    }
+
+    // If server returned duplicate flag, just mark as registered without creating another notification
+    if (result.duplicate) {
+      setRegSuccess(prev => [...prev, evt.id]);
+      setRegId(result.registrationId || result.id || null);
+      return;
+    }
     await createNotification(
       profile.uid,
       result.status === 'confirmed' ? 'Registration Confirmed!' : 'Added to Waitlist',
@@ -65,9 +109,8 @@ export function ExploreEvents() {
       'registration',
       evt.id
     );
-    setRegLoading(null);
     setRegSuccess(prev => [...prev, evt.id]);
-    setRegId(result.registrationId || result.id);
+    setRegId(result.registrationId || result.id || null);
   };
 
   const handleShare = async (evt: CampusEvent) => {
@@ -105,6 +148,12 @@ export function ExploreEvents() {
     return Date.now() > evt.registrationDeadline.toDate().getTime();
   };
 
+  // Past event check — event has already started/ended
+  const isPastEvent = (evt: CampusEvent) => {
+    if (!evt.startTime?.toDate) return false;
+    return Date.now() > evt.startTime.toDate().getTime();
+  };
+
   const formatDate = (evt: CampusEvent) => {
     if (!evt.startTime?.toDate) return '';
     const d = evt.startTime.toDate();
@@ -130,7 +179,7 @@ export function ExploreEvents() {
           <h3 className="text-sm font-black uppercase italic flex items-center gap-1.5 opacity-60"><TrendingUp className="w-4 h-4" /> Trending Now</h3>
           <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
             {trending.map((evt, i) => (
-              <div key={evt.id} onClick={() => setSelectedEvent(evt)}
+              <div key={evt.id} onClick={() => handleOpenEvent(evt)}
                 className="min-w-[240px] border-[2.5px] border-black rounded-xl p-3 bg-gradient-to-br from-yellow-50 to-pink-50 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] cursor-pointer hover:shadow-none transition-all flex items-center gap-3">
                 <div className="w-10 h-10 bg-yellow-400 border-[2px] border-black rounded-lg flex items-center justify-center font-black text-lg shrink-0">
                   {i === 0 ? '🔥' : i === 1 ? '⚡' : '✨'}
@@ -175,9 +224,9 @@ export function ExploreEvents() {
           </BrutalCard>
         ) : (
           filtered.map((evt) => {
-            const isRegistered = regSuccess.includes(evt.id);
+            const isRegistered = isRegisteredFor(evt.id);
             return (
-              <BrutalCard key={evt.id} className="p-0 group overflow-hidden border-b-[5px]" onClick={() => setSelectedEvent(evt)}>
+              <BrutalCard key={evt.id} className="p-0 group overflow-hidden border-b-[5px]" onClick={() => handleOpenEvent(evt)}>
                 <div className="h-32 border-b-[2px] border-black bg-slate-100 overflow-hidden flex items-center justify-center relative">
                   <span className="text-5xl font-black opacity-5 uppercase group-hover:scale-110 transition-transform">{evt.category}</span>
                   <div className="absolute top-2 right-2"><Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.yellow} /></div>
@@ -303,11 +352,11 @@ export function ExploreEvents() {
               )}
 
               {/* Register Button */}
-              {isAuthenticated && selectedEvent.status === 'approved' && !regSuccess.includes(selectedEvent.id) && !isPastDeadline(selectedEvent) ? (
+              {isAuthenticated && selectedEvent.status === 'approved' && !isRegisteredFor(selectedEvent.id) && !isPastDeadline(selectedEvent) && !isPastEvent(selectedEvent) ? (
                 <BrutalButton className="w-full py-3 text-sm" color={COLORS.teal} disabled={regLoading === selectedEvent.id} onClick={() => handleRegister(selectedEvent)}>
                   {regLoading === selectedEvent.id ? 'Registering...' : `Register Now (${Math.max(selectedEvent.registeredCount || 0, 0)}/${selectedEvent.capacity})`}
                 </BrutalButton>
-              ) : regSuccess.includes(selectedEvent.id) ? (
+              ) : isRegisteredFor(selectedEvent.id) ? (
                 <div className="space-y-2">
                   <BrutalButton className="w-full py-3 text-sm" color={COLORS.green} disabled>✓ You're Registered!</BrutalButton>
                   {regId && (
@@ -317,6 +366,8 @@ export function ExploreEvents() {
                     </div>
                   )}
                 </div>
+              ) : isPastEvent(selectedEvent) ? (
+                <BrutalButton className="w-full py-3 text-sm" color="#e5e7eb" disabled>⏰ Event Has Ended</BrutalButton>
               ) : isPastDeadline(selectedEvent) ? (
                 <BrutalButton className="w-full py-3 text-sm" color="#e5e7eb" disabled>Registration Closed</BrutalButton>
               ) : !isAuthenticated ? (
