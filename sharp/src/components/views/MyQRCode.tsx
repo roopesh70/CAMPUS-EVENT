@@ -27,8 +27,12 @@ export function MyQRCode() {
 
   // Only show confirmed registrations for approved/ongoing events
   const eligibleRegistrations = useMemo(() => {
-    return registrations.filter(r => r.status === 'confirmed');
-  }, [registrations]);
+    return registrations.filter(r => {
+      if (r.status !== 'confirmed') return false;
+      const event = events.find(e => e.id === r.eventId);
+      return event && (event.status === 'approved' || event.status === 'ongoing');
+    });
+  }, [registrations, events]);
 
   // Auto-select if only one eligible registration
   useEffect(() => {
@@ -260,7 +264,16 @@ export function MyQRCode() {
             {eligibleRegistrations.map(reg => (
               <BrutalCard
                 key={reg.id}
-                className={`flex items-center justify-between p-3 cursor-pointer hover:bg-yellow-50 transition-colors border-l-[5px] ${
+                role="button"
+                tabIndex={0}
+                aria-selected={selectedRegId === reg.id}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedRegId(reg.id);
+                  }
+                }}
+                className={`flex items-center justify-between p-3 cursor-pointer hover:bg-yellow-50 transition-colors border-l-[5px] focus:outline-none focus:ring-[3px] focus:ring-black ${
                   selectedRegId === reg.id
                     ? 'border-l-yellow-400 bg-yellow-50'
                     : 'border-l-transparent'

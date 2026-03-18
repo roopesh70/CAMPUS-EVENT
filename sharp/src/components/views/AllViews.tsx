@@ -1575,6 +1575,8 @@ export function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
+  const initialLoadRef = useRef(true);
+
   // Track pending operations to avoid data clobbering from background sync
   const pendingUpdates = useRef<Record<string, string>>({});
 
@@ -1586,7 +1588,9 @@ export function UserManagement() {
 
   const loadUsers = useCallback(async () => {
     // Only show loading if we haven't loaded initial data yet
-    setLoading(users.length === 0);
+    if (initialLoadRef.current) {
+      setLoading(true);
+    }
     const data = await queryDocs<UserProfile>('users', []);
     // Merge strategy: preserve optimistic role if user is in pendingUpdates
     setUsers(data.map(serverUser => {
@@ -1596,8 +1600,11 @@ export function UserManagement() {
       }
       return serverUser;
     }));
-    setLoading(false);
-  }, [users.length]);
+    if (initialLoadRef.current) {
+      setLoading(false);
+      initialLoadRef.current = false;
+    }
+  }, []);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
