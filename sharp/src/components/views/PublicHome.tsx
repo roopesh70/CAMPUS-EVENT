@@ -79,7 +79,7 @@ export function PublicHome() {
                     <Badge text={evt.category} color={color} />
                     <h4 className="text-md font-black uppercase italic leading-tight">{evt.title}</h4>
                     <p className="text-[8px] font-bold opacity-40 uppercase tracking-widest">{evt.organizerName} • {evt.registeredCount} registered</p>
-                    <BrutalButton className="w-full mt-2 bg-yellow-400 border-2">View Now</BrutalButton>
+                    <BrutalButton className="w-full mt-2 bg-yellow-400 border-2" onClick={() => { useUIStore.getState().setTargetEventId(evt.id); setActiveTab('explore'); }}>View Now</BrutalButton>
                   </div>
                 </BrutalCard>
               );

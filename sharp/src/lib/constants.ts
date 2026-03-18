@@ -31,7 +31,6 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
     { id: 'calendar', label: 'Campus Calendar', icon: Calendar },
     { id: 'announcements', label: 'Announcements', icon: Bell },
     { id: 'about', label: 'About', icon: Info },
-    { id: 'auth', label: 'Login / Register', icon: LogIn },
   ],
   student: [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -41,8 +40,6 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
     { id: 'my-qr', label: 'My QR Code', icon: QrCode },
     { id: 'certificates', label: 'Certificates', icon: Award },
     { id: 'feedback', label: 'Feedback', icon: MessageSquare },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'profile', label: 'Profile', icon: User },
   ],
   organizer: [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -54,8 +51,6 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
     { id: 'tasks', label: 'Tasks', icon: CheckSquare },
     { id: 'updates', label: 'Event Updates', icon: Bell },
     { id: 'analytics', label: 'Analytics', icon: BarChart2 },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'profile', label: 'Profile', icon: User },
   ],
   admin: [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -64,11 +59,9 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
     { id: 'venues', label: 'Venue Management', icon: MapPin },
     { id: 'users', label: 'User Management', icon: Users },
     { id: 'analytics', label: 'Analytics & Reports', icon: BarChart2 },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'system-notifications', label: 'System Notifications', icon: Send },
     { id: 'settings', label: 'System Settings', icon: Settings },
     { id: 'data', label: 'Data Management', icon: Database },
     { id: 'logs', label: 'Activity Logs', icon: Activity },
-    { id: 'profile', label: 'Profile', icon: User },
   ],
 };

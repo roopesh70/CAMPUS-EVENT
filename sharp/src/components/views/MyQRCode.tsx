@@ -30,7 +30,7 @@ export function MyQRCode() {
     return registrations.filter(r => {
       if (r.status !== 'confirmed') return false;
       const event = events.find(e => e.id === r.eventId);
-      return event && (event.status === 'approved' || event.status === 'ongoing');
+      return event && (event.status === 'approved' || event.status === 'completed');
     });
   }, [registrations, events]);
 

@@ -78,12 +78,13 @@ export function CalendarView() {
               {showMine ? 'My Events' : 'All Events'}
             </BrutalButton>
           )}
-          <BrutalButton color={viewMode === 'list' ? COLORS.yellow : 'white'} className="w-9 h-9" onClick={() => setViewMode(viewMode === 'month' ? 'list' : 'month')}>
+          <BrutalButton color={viewMode === 'list' ? COLORS.yellow : 'white'} className="h-9 px-3 flex items-center gap-2 text-[8px] uppercase font-black" onClick={() => setViewMode(viewMode === 'month' ? 'list' : 'month')}>
             {viewMode === 'month' ? <List className="w-4 h-4" /> : <Grid3X3 className="w-4 h-4" />}
+            <span className="hidden sm:inline">{viewMode === 'month' ? 'List View' : 'Month View'}</span>
           </BrutalButton>
-          <BrutalButton color="white" className="w-9 h-9" onClick={prev}><ChevronLeft className="w-4 h-4" /></BrutalButton>
+          <BrutalButton color="white" className="px-3 h-9 text-[8px] flex items-center gap-1" onClick={prev}><ChevronLeft className="w-4 h-4" /><span className="hidden sm:inline">Prev</span></BrutalButton>
           <BrutalButton color={COLORS.yellow} className="px-4 h-9 text-[9px]" onClick={() => { setYear(new Date().getFullYear()); setMonth(new Date().getMonth()); setSelectedDay(null); }}>Today</BrutalButton>
-          <BrutalButton color="white" className="w-9 h-9" onClick={next}><ChevronRight className="w-4 h-4" /></BrutalButton>
+          <BrutalButton color="white" className="px-3 h-9 text-[8px] flex items-center gap-1" onClick={next}><span className="hidden sm:inline">Next</span><ChevronRight className="w-4 h-4" /></BrutalButton>
         </div>
       </div>
 

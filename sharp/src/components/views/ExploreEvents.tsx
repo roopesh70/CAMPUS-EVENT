@@ -11,13 +11,15 @@ import { useEvents } from '@/hooks/useEvents';
 import { useRegistrations } from '@/hooks/useRegistrations';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useAuthStore } from '@/stores/authStore';
+import { useUIStore } from '@/stores/uiStore';
 import type { CampusEvent } from '@/types';
 
 export function ExploreEvents() {
   const { events, fetchPublicEvents } = useEvents();
   const { registerForEvent, fetchUserRegistrations, registrations: userRegs } = useRegistrations();
-  const { createNotification } = useNotifications(useAuthStore.getState().profile?.uid);
   const { profile, isAuthenticated } = useAuthStore();
+  const { createNotification } = useNotifications(useAuthStore.getState().profile?.uid);
+  const { setActiveTab, targetEventId, setTargetEventId } = useUIStore();
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'popularity'>('date');
@@ -40,6 +42,17 @@ export function ExploreEvents() {
     regSuccess.forEach(id => fromDB.add(id));
     return fromDB;
   }, [userRegs, regSuccess]);
+
+  // Handle deep-linking from UI State
+  useEffect(() => {
+    if (targetEventId && events.length > 0) {
+      const evt = events.find(e => e.id === targetEventId);
+      if (evt) {
+        setSelectedEvent(evt);
+        setTargetEventId(null);
+      }
+    }
+  }, [targetEventId, events, setTargetEventId]);
 
   const isRegisteredFor = (eventId: string) => registeredEventIds.has(eventId);
 
@@ -257,8 +270,12 @@ export function ExploreEvents() {
 
       {/* Event Detail Modal */}
       {selectedEvent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" onClick={() => { setSelectedEvent(null); setRegId(null); }}>
-          <div className="bg-[#FFFBEB] border-[3px] border-black rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center sm:p-4 animate-[fadeIn_0.2s_ease-out]" onClick={() => { setSelectedEvent(null); setRegId(null); }}>
+          <div className="bg-[#FFFBEB] border-t-[3px] sm:border-[3px] border-black rounded-t-2xl sm:rounded-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.15)] sm:shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full max-h-[90vh] sm:max-h-[85vh] overflow-y-auto animate-[slideUp_0.3s_ease-out]" onClick={e => e.stopPropagation()}>
+            {/* Mobile drag indicator */}
+            <div className="sm:hidden flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 bg-black/20 rounded-full" />
+            </div>
             {/* Poster Banner */}
             {selectedEvent.posterUrl && (
               <img src={selectedEvent.posterUrl} alt="Event poster" className="w-full max-h-52 object-cover rounded-t-2xl border-b-[2.5px] border-black" />
@@ -371,7 +388,10 @@ export function ExploreEvents() {
               ) : isPastDeadline(selectedEvent) ? (
                 <BrutalButton className="w-full py-3 text-sm" color="#e5e7eb" disabled>Registration Closed</BrutalButton>
               ) : !isAuthenticated ? (
-                <BrutalButton className="w-full py-3 text-sm" color={COLORS.yellow}>Sign In to Register</BrutalButton>
+                <div className="bg-slate-50 border-[2.5px] border-black p-4 rounded-xl text-center space-y-3">
+                  <p className="text-xs font-bold italic opacity-60">Log in to register and save your spot</p>
+                  <BrutalButton className="w-full py-3 text-sm" color={COLORS.yellow} onClick={() => { setSelectedEvent(null); setActiveTab('auth'); }}>Sign In to Register</BrutalButton>
+                </div>
               ) : null}
 
               {/* Share Button */}

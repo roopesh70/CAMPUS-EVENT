@@ -8,12 +8,13 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { BrutalInput } from '@/components/ui/BrutalInput';
 
 export function Topbar() {
-  const { toggleSidebar, setActiveTab } = useUIStore();
+  const { activeTab, toggleSidebar, setActiveTab, goBack } = useUIStore();
   const { profile, role, isAuthenticated } = useAuthStore();
   const { unreadCount } = useNotifications(profile?.uid);
 
   const handleBellClick = () => {
-    setActiveTab('notifications');
+    if (activeTab === 'notifications') goBack();
+    else setActiveTab('notifications');
   };
 
   return (
@@ -52,7 +53,7 @@ export function Topbar() {
                 </span>
               )}
             </button>
-            <div className="w-8 h-8 border-[2.5px] border-black rounded-xl overflow-hidden bg-pink-300 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+            <div onClick={() => activeTab === 'profile' ? goBack() : setActiveTab('profile')} className="w-8 h-8 border-[2.5px] border-black rounded-xl overflow-hidden bg-pink-300 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] cursor-pointer hover:shadow-none transition-all">
               {profile.photoURL ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profile.photoURL} alt="avatar" className="w-full h-full object-cover" />

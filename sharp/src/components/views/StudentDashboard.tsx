@@ -41,7 +41,9 @@ export function StudentDashboard() {
   const attendanceRate = regCount > 0 ? Math.round((attendedCount / regCount) * 100) : 0;
   const recentNotifs = notifications.slice(0, 4);
 
-  const registeredEventIds = useMemo(() => new Set(registrations.map(r => r.eventId)), [registrations]);
+  const registeredEventIds = useMemo(() => new Set(
+    registrations.filter(r => r.status === 'confirmed' || r.status === 'waitlisted').map(r => r.eventId)
+  ), [registrations]);
 
   // Past events the student was registered for
   const pastRegistered = useMemo(() => {

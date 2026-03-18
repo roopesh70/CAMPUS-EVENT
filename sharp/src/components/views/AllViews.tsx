@@ -117,33 +117,44 @@ export function MyRegistrations() {
   const { registrations, fetchUserRegistrations, cancelRegistration } = useRegistrations();
   const [tab, setTab] = useState('confirmed');
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [optimisticCancelled, setOptimisticCancelled] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (profile?.uid) fetchUserRegistrations(profile.uid);
   }, [profile?.uid, fetchUserRegistrations]);
 
   const handleCancel = async (regId: string, eventId: string) => {
-    if (cancellingId) return; // prevent concurrent cancels
+    if (cancellingId) return;
     setCancellingId(regId);
-    const result = await cancelRegistration(regId, eventId, profile?.uid);
-    if (result?.error) {
-      console.warn('Cancel failed:', result.error);
-    }
-    // Refresh list from Firestore to reflect true state
-    if (profile?.uid) await fetchUserRegistrations(profile.uid);
+    // Optimistic: immediately mark as cancelled in UI
+    setOptimisticCancelled(prev => new Set(prev).add(regId));
     setCancellingId(null);
+    // Fire-and-forget the actual Firestore cancel + refresh
+    cancelRegistration(regId, eventId, profile?.uid).then(result => {
+      if (result?.error) {
+        console.warn('Cancel failed:', result.error);
+        // Revert optimistic update on failure
+        setOptimisticCancelled(prev => { const next = new Set(prev); next.delete(regId); return next; });
+      }
+      if (profile?.uid) fetchUserRegistrations(profile.uid);
+    });
   };
 
-  const filtered = tab === 'all' ? registrations : registrations.filter(r => r.status === tab);
+  // Merge Firestore data with optimistic cancellations
+  const effectiveRegistrations = registrations.map(r =>
+    optimisticCancelled.has(r.id) ? { ...r, status: 'cancelled' as const } : r
+  );
+
+  const filtered = tab === 'all' ? effectiveRegistrations : effectiveRegistrations.filter(r => r.status === tab);
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">My Registrations</h2>
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-        {['all', 'confirmed', 'waitlisted', 'cancelled', 'attended'].map((t, i) => (
+        {['all', 'confirmed', 'waitlisted', 'cancelled', 'attended'].map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`whitespace-nowrap border-[2px] border-black px-4 py-1.5 font-black uppercase text-[9px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${tab === t ? 'bg-yellow-400' : 'bg-white'}`}>
-            {t} ({(t === 'all' ? registrations : registrations.filter(r => r.status === t)).length})
+            {t} ({(t === 'all' ? effectiveRegistrations : effectiveRegistrations.filter(r => r.status === t)).length})
           </button>
         ))}
       </div>
@@ -466,25 +477,72 @@ export function NotificationsPage() {
 
 /* ===== Profile Page (ALL ROLES) — with Role Management ===== */
 export function ProfilePage() {
-  const { profile, role } = useAuthStore();
+  const { profile, role, setProfile } = useAuthStore();
   const [name, setName] = useState(profile?.name || '');
   const [department, setDepartment] = useState(profile?.department || '');
+  const [year, setYear] = useState<number | null>(profile?.year ?? null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [newRole, setNewRole] = useState(role || 'student');
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (profile) {
       setName(profile.name || '');
       setDepartment(profile.department || '');
+      setYear(profile.year ?? null);
       setNewRole(profile.role || 'student');
     }
   }, [profile]);
 
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile?.uid) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be under 5 MB');
+      return;
+    }
+    // Show preview immediately
+    const reader = new FileReader();
+    reader.onload = (ev) => setPhotoPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      // Using Cloudinary instead of Firebase Storage as requested
+      formData.append('upload_preset', process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'sharp_unsigned');
+      const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dxh9eys8x'; // Using default or env
+      
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) throw new Error('Cloudinary upload failed');
+      const data = await response.json();
+      const downloadURL = data.secure_url;
+      
+      await updateDocument('users', profile.uid, { photoURL: downloadURL });
+      // Update local auth store so topbar avatar refreshes
+      setProfile({ ...profile, photoURL: downloadURL });
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+      setPhotoPreview(null);
+      alert('Failed to upload photo to Cloudinary. Please try again.');
+    }
+    setUploading(false);
+  };
+
   const handleSave = async () => {
     if (!profile?.uid) return;
     setSaving(true);
-    await updateDocument('users', profile.uid, { name, department });
+    await updateDocument('users', profile.uid, { name, department, year });
+    // Update local auth store
+    setProfile({ ...profile, name, department, year });
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -496,9 +554,10 @@ export function ProfilePage() {
     await updateDocument('users', profile.uid, { role: newRole });
     setSaving(false);
     setSaved(true);
-    // Reload to reflect role change
     setTimeout(() => window.location.reload(), 1000);
   };
+
+  const displayPhoto = photoPreview || profile?.photoURL;
 
   return (
     <div className="space-y-6">
@@ -507,13 +566,28 @@ export function ProfilePage() {
       {/* Profile Info */}
       <BrutalCard className="p-6 border-b-[6px]">
         <div className="flex flex-col sm:flex-row gap-6 items-center sm:items-start">
-          <div className="w-24 h-24 border-[3px] border-black rounded-2xl overflow-hidden bg-pink-300 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0 flex items-center justify-center">
-            {profile?.photoURL ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={profile.photoURL} alt="avatar" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-3xl font-black">{(profile?.name || 'U')[0].toUpperCase()}</span>
-            )}
+          {/* Clickable avatar for photo upload */}
+          <div className="relative group">
+            <div className="w-24 h-24 border-[3px] border-black rounded-2xl overflow-hidden bg-pink-300 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] shrink-0 flex items-center justify-center cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}>
+              {displayPhoto ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={displayPhoto} alt="avatar" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-3xl font-black">{(profile?.name || 'U')[0].toUpperCase()}</span>
+              )}
+              {/* Hover overlay */}
+              <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <span className="text-white text-xl">📷</span>
+              </div>
+              {uploading && (
+                <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center">
+                  <span className="text-white text-[9px] font-black uppercase animate-pulse">Uploading...</span>
+                </div>
+              )}
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+            <p className="text-[7px] font-black uppercase opacity-30 text-center mt-1">Click to change</p>
           </div>
           <div className="flex-1 space-y-4 w-full">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -528,6 +602,19 @@ export function ProfilePage() {
               <div className="space-y-1.5">
                 <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Department</label>
                 <BrutalInput value={department} onChange={e => setDepartment(e.target.value)} placeholder="Computer Science" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Current Year</label>
+                <select
+                  value={year ?? ''}
+                  onChange={e => setYear(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic"
+                >
+                  <option value="">Select year...</option>
+                  {[1, 2, 3, 4, 5, 6].map(y => (
+                    <option key={y} value={y}>{y === 1 ? '1st' : y === 2 ? '2nd' : y === 3 ? '3rd' : `${y}th`} Year</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1.5">
                 <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Current Role</label>
