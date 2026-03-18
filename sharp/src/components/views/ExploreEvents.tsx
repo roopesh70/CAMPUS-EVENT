@@ -270,12 +270,8 @@ export function ExploreEvents() {
 
       {/* Event Detail Modal */}
       {selectedEvent && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center sm:p-4 animate-[fadeIn_0.2s_ease-out]" onClick={() => { setSelectedEvent(null); setRegId(null); }}>
-          <div className="bg-[#FFFBEB] border-t-[3px] sm:border-[3px] border-black rounded-t-2xl sm:rounded-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.15)] sm:shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full max-h-[90vh] sm:max-h-[85vh] overflow-y-auto animate-[slideUp_0.3s_ease-out]" onClick={e => e.stopPropagation()}>
-            {/* Mobile drag indicator */}
-            <div className="sm:hidden flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 bg-black/20 rounded-full" />
-            </div>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]" onClick={() => { setSelectedEvent(null); setRegId(null); }}>
+          <div className="bg-[#FFFBEB] border-[3px] border-black rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full max-h-[85vh] overflow-y-auto animate-[slideUp_0.3s_ease-out]" onClick={e => e.stopPropagation()}>
             {/* Poster Banner */}
             {selectedEvent.posterUrl && (
               <img src={selectedEvent.posterUrl} alt="Event poster" className="w-full max-h-52 object-cover rounded-t-2xl border-b-[2.5px] border-black" />
