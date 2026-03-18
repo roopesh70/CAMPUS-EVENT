@@ -5,9 +5,11 @@ import {
   queryDocs, addDocument, updateDocument,
   listenToCollection, where, orderBy,
 } from '@/lib/firestore';
+import { useAuthStore } from '@/stores/authStore';
 import type { Notification } from '@/types';
 
 export function useNotifications(userId: string | undefined) {
+  const { role } = useAuthStore();
   const [personalNotifs, setPersonalNotifs] = useState<Notification[]>([]);
   const [broadcastNotifs, setBroadcastNotifs] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -27,18 +29,27 @@ export function useNotifications(userId: string | undefined) {
     return () => unsub();
   }, [userId]);
 
-  // Listener 2: Broadcast notifications (userId == 'broadcast') — visible to everyone
+  // Listener 2: Broadcast notifications — visible to everyone OR specific roles
   useEffect(() => {
     if (!userId) return;
+    
+    // Listen to 'broadcast' (all), and specific roles. Admins listen to all.
+    let targetAudiences = ['broadcast'];
+    if (role === 'admin') {
+      targetAudiences = ['broadcast', 'broadcast_student', 'broadcast_organizer', 'broadcast_admin'];
+    } else if (role) {
+      targetAudiences.push(`broadcast_${role}`);
+    }
+
     const unsub = listenToCollection<Notification>(
       'notifications',
-      [where('userId', '==', 'broadcast'), orderBy('createdAt', 'desc')],
+      [where('userId', 'in', targetAudiences), orderBy('createdAt', 'desc')],
       (items) => {
         setBroadcastNotifs(items);
       }
     );
     return () => unsub();
-  }, [userId]);
+  }, [userId, role]);
 
   // Merge personal + broadcast, sort by createdAt desc
   const notifications = [...personalNotifs, ...broadcastNotifs].sort((a, b) => {
@@ -78,15 +89,16 @@ export function useNotifications(userId: string | undefined) {
     });
   }, []);
 
-  // Broadcast notification (visible to ALL users)
+  // Broadcast notification (visible to ALL users or TARGET audiences)
   const broadcastNotification = useCallback(async (
     title: string,
     message: string,
     type: Notification['type'],
-    eventId?: string
+    eventId?: string,
+    targetAudience: string = 'broadcast'
   ) => {
     await addDocument('notifications', {
-      userId: 'broadcast',
+      userId: targetAudience,
       title,
       message,
       type,

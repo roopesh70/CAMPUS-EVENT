@@ -14,6 +14,7 @@ import { ExploreEvents } from '@/components/views/ExploreEvents';
 import { CalendarView } from '@/components/views/CalendarView';
 import { StudentDashboard } from '@/components/views/StudentDashboard';
 import { OrganizerDashboard, CreateEventFlow } from '@/components/views/OrganizerViews';
+import { MyQRCode } from '@/components/views/MyQRCode';
 import { AdminDashboard, AdminApprovals } from '@/components/views/AdminViews';
 import { PlaceholderSection } from '@/components/ui/PlaceholderSection';
 import {
@@ -42,6 +43,7 @@ function StudentView({ tab }: { tab: string }) {
   if (tab === 'discover') return <ExploreEvents />;
   if (tab === 'calendar') return <CalendarView />;
   if (tab === 'registrations') return <MyRegistrations />;
+  if (tab === 'my-qr') return <MyQRCode />;
   if (tab === 'certificates') return <CertificatesPage />;
   if (tab === 'feedback') return <FeedbackPage />;
   if (tab === 'notifications') return <NotificationsPage />;
@@ -71,7 +73,8 @@ function AdminView({ tab }: { tab: string }) {
   if (tab === 'venues') return <VenueManagement />;
   if (tab === 'users') return <UserManagement />;
   if (tab === 'analytics') return <AdminAnalytics />;
-  if (tab === 'notifications') return <SystemNotificationsPage />;
+  if (tab === 'notifications') return <NotificationsPage />;
+  if (tab === 'system-notifications') return <SystemNotificationsPage />;
   if (tab === 'settings') return <SystemSettingsPage />;
   if (tab === 'data') return <DataManagementPage />;
   if (tab === 'logs') return <ActivityLogsPage />;

@@ -2,7 +2,7 @@ import {
   Home, Compass, Calendar, Bell, Info, LogIn, LayoutDashboard,
   CheckSquare, Award, MessageSquare, User, PlusCircle,
   Users, CheckCircle, FileText, BarChart2, ShieldCheck,
-  MapPin, Settings, Database, Activity,
+  MapPin, Settings, Database, Activity, QrCode, Send,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -38,6 +38,7 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
     { id: 'discover', label: 'Discover Events', icon: Compass },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'registrations', label: 'My Registrations', icon: CheckSquare },
+    { id: 'my-qr', label: 'My QR Code', icon: QrCode },
     { id: 'certificates', label: 'Certificates', icon: Award },
     { id: 'feedback', label: 'Feedback', icon: MessageSquare },
     { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -63,7 +64,8 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
     { id: 'venues', label: 'Venue Management', icon: MapPin },
     { id: 'users', label: 'User Management', icon: Users },
     { id: 'analytics', label: 'Analytics & Reports', icon: BarChart2 },
-    { id: 'notifications', label: 'System Notifications', icon: Bell },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
+    { id: 'system-notifications', label: 'System Notifications', icon: Send },
     { id: 'settings', label: 'System Settings', icon: Settings },
     { id: 'data', label: 'Data Management', icon: Database },
     { id: 'logs', label: 'Activity Logs', icon: Activity },

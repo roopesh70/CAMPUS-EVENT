@@ -2,6 +2,7 @@ import { Timestamp } from 'firebase/firestore';
 
 /* ===== Users ===== */
 export interface UserProfile {
+  id?: string;
   uid: string;
   name: string;
   email: string;

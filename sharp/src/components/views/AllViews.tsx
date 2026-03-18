@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { BrutalInput } from '@/components/ui/BrutalInput';
@@ -17,7 +17,7 @@ import { useTasks } from '@/hooks/useTasks';
 import { useCertificates } from '@/hooks/useCertificates';
 import { queryDocs, updateDocument, where, orderBy } from '@/lib/firestore';
 import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue, Certificate } from '@/types';
-import { Bell, Mail, Info, LogIn, Award, MessageSquare, CheckSquare, User, FileText, Users, CheckCircle, BarChart2, MapPin, Settings, Database, Activity, Send, Calendar } from 'lucide-react';
+import { Bell, Mail, Info, LogIn, Award, MessageSquare, CheckSquare, User, FileText, Users, CheckCircle, BarChart2, MapPin, Settings, Database, Activity, Send, Calendar, Search } from 'lucide-react';
 
 /* ===== Public: Announcements ===== */
 export function AnnouncementsPage() {
@@ -422,22 +422,31 @@ export function FeedbackPage() {
 
 /* ===== Student: Notifications ===== */
 export function NotificationsPage() {
-  const { profile } = useAuthStore();
+  const { profile, role } = useAuthStore();
   const { notifications, markAsRead, markAllAsRead } = useNotifications(profile?.uid);
+
+  const displayNotifs = role === 'admin' 
+    ? notifications.filter(n => !(n.userId || '').startsWith('broadcast')) 
+    : notifications;
+
+  const markDisplayedAsRead = async () => {
+    const unread = displayNotifs.filter(n => !n.read);
+    await Promise.all(unread.map(n => markAsRead(n.id)));
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">Notifications</h2>
-        {notifications.some(n => !n.read) && (
-          <BrutalButton color={COLORS.teal} className="text-[8px] px-3 py-1" onClick={markAllAsRead}>Mark All Read</BrutalButton>
+        {displayNotifs.some(n => !n.read) && (
+          <BrutalButton color={COLORS.teal} className="text-[8px] px-3 py-1" onClick={markDisplayedAsRead}>Mark All Read</BrutalButton>
         )}
       </div>
       <div className="border-[2.5px] border-black bg-white rounded-xl overflow-hidden shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
-        {notifications.length === 0 ? (
+        {displayNotifs.length === 0 ? (
           <div className="p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">No notifications yet</p></div>
         ) : (
-          notifications.map((notif) => (
+          displayNotifs.map((notif) => (
             <div key={notif.id} onClick={() => !notif.read && markAsRead(notif.id)}
               className={`p-3.5 border-b-[2px] border-black hover:bg-yellow-50 cursor-pointer transition-colors last:border-0 ${!notif.read ? 'border-l-[4px] border-l-yellow-400 bg-yellow-50/50' : ''}`}>
               <div className="flex justify-between items-start mb-1">
@@ -693,12 +702,26 @@ export function AttendancePage() {
   const { registrations, fetchEventParticipants, markAttendance } = useRegistrations();
   const [selectedEvent, setSelectedEvent] = useState('');
   const [marking, setMarking] = useState<string | null>(null);
-  const [mode, setMode] = useState<'qr' | 'scan' | 'manual'>('qr');
-  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+  const [mode, setMode] = useState<'scan' | 'manual'>('scan');
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<string>('');
+  const [manualId, setManualId] = useState('');
+  const [manualResult, setManualResult] = useState<string>('');
+  const [manualSearching, setManualSearching] = useState(false);
   const scannerRef = React.useRef<HTMLDivElement>(null);
   const html5QrRef = React.useRef<any>(null);
+  const lastScannedRef = React.useRef<string>('');
+
+  const registrationsRef = React.useRef(registrations);
+  const selectedEventRef = React.useRef(selectedEvent);
+
+  useEffect(() => {
+    registrationsRef.current = registrations;
+  }, [registrations]);
+
+  useEffect(() => {
+    selectedEventRef.current = selectedEvent;
+  }, [selectedEvent]);
 
   useEffect(() => {
     if (profile?.uid) fetchOrganizerEvents(profile.uid);
@@ -708,24 +731,12 @@ export function AttendancePage() {
     if (selectedEvent) fetchEventParticipants(selectedEvent);
   }, [selectedEvent, fetchEventParticipants]);
 
-  // Generate QR code when event is selected
-  useEffect(() => {
-    if (selectedEvent) {
-      import('qrcode').then(QRCode => {
-        QRCode.toDataURL(`SHARP_ATTENDANCE:${selectedEvent}`, {
-          width: 300,
-          margin: 2,
-          color: { dark: '#000', light: '#FFFBEB' },
-        }).then(url => setQrDataUrl(url)).catch(() => {});
-      });
-    }
-  }, [selectedEvent]);
-
-  // Start QR scanner
+  // Start QR scanner — handles both new and old format
   const startScanner = async () => {
     if (!scannerRef.current || !selectedEvent) return;
     setScanning(true);
     setScanResult('');
+    lastScannedRef.current = '';
 
     try {
       const { Html5Qrcode } = await import('html5-qrcode');
@@ -736,25 +747,56 @@ export function AttendancePage() {
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         async (decodedText) => {
-          // Expected format: SHARP_CHECKIN:{userId}
+          // Prevent duplicate rapid scans of the same code
+          if (decodedText === lastScannedRef.current) return;
+          lastScannedRef.current = decodedText;
+
           if (decodedText.startsWith('SHARP_CHECKIN:')) {
-            const userId = decodedText.replace('SHARP_CHECKIN:', '');
-            const reg = registrations.find(r => r.userId === userId);
-            if (reg && reg.attendanceStatus !== 'present') {
-              await markAttendance(reg.id, selectedEvent, 'present');
-              await fetchEventParticipants(selectedEvent);
-              setScanResult(`✓ Checked in: ${reg.userName}`);
-            } else if (reg) {
-              setScanResult(`Already checked in: ${reg.userName}`);
+            const parts = decodedText.replace('SHARP_CHECKIN:', '').split(':');
+
+            if (parts.length === 2) {
+              // New format: SHARP_CHECKIN:{eventId}:{registrationId}
+              const [scannedEventId, scannedRegId] = parts;
+
+              // Validate the scanned QR is for the currently selected event
+              if (scannedEventId !== selectedEventRef.current) {
+                setScanResult('✗ Wrong event — this QR is for a different event');
+                setTimeout(() => { setScanResult(''); lastScannedRef.current = ''; }, 3000);
+                return;
+              }
+
+              const reg = registrationsRef.current.find(r => r.registrationId === scannedRegId);
+              if (reg && reg.attendanceStatus !== 'present') {
+                await markAttendance(reg.id, selectedEventRef.current, 'present');
+                await fetchEventParticipants(selectedEventRef.current);
+                setScanResult(`✓ Checked in: ${reg.userName} (${reg.userDepartment || 'N/A'})`);
+              } else if (reg) {
+                setScanResult(`⚠ Already checked in: ${reg.userName}`);
+              } else {
+                setScanResult('✗ Registration not found for this event');
+              }
+            } else if (parts.length === 1) {
+              // Old format: SHARP_CHECKIN:{userId}
+              const userId = parts[0];
+              const reg = registrationsRef.current.find(r => r.userId === userId);
+              if (reg && reg.attendanceStatus !== 'present') {
+                await markAttendance(reg.id, selectedEventRef.current, 'present');
+                await fetchEventParticipants(selectedEventRef.current);
+                setScanResult(`✓ Checked in: ${reg.userName} (${reg.userDepartment || 'N/A'})`);
+              } else if (reg) {
+                setScanResult(`⚠ Already checked in: ${reg.userName}`);
+              } else {
+                setScanResult('✗ User not registered for this event');
+              }
             } else {
-              setScanResult(`User not registered for this event`);
+              setScanResult('✗ Invalid QR code format');
             }
           } else {
-            setScanResult(`Invalid QR code`);
+            setScanResult('✗ Invalid QR code — not a SHARP check-in code');
           }
-          setTimeout(() => setScanResult(''), 3000);
+          setTimeout(() => { setScanResult(''); lastScannedRef.current = ''; }, 4000);
         },
-        () => {} // ignore errors
+        () => {} // ignore scan errors
       );
     } catch (err) {
       setScanResult('Camera access denied or not available');
@@ -784,6 +826,40 @@ export function AttendancePage() {
     setMarking(null);
   };
 
+  // Manual ID entry handler
+  const handleManualCheckin = async () => {
+    const trimmedId = manualId.trim().toUpperCase();
+    if (!trimmedId || !selectedEvent) return;
+    setManualSearching(true);
+    setManualResult('');
+
+    const reg = registrations.find(
+      r => r.registrationId?.toUpperCase() === trimmedId ||
+           r.id?.toUpperCase() === trimmedId
+    );
+
+    if (!reg) {
+      setManualResult('✗ No registration found with this ID');
+      setManualSearching(false);
+      setTimeout(() => setManualResult(''), 4000);
+      return;
+    }
+
+    if (reg.attendanceStatus === 'present') {
+      setManualResult(`⚠ Already checked in: ${reg.userName}`);
+      setManualSearching(false);
+      setTimeout(() => setManualResult(''), 4000);
+      return;
+    }
+
+    await markAttendance(reg.id, selectedEvent, 'present');
+    await fetchEventParticipants(selectedEvent);
+    setManualResult(`✓ Checked in: ${reg.userName} (${reg.userDepartment || 'N/A'})`);
+    setManualId('');
+    setManualSearching(false);
+    setTimeout(() => setManualResult(''), 4000);
+  };
+
   const presentCount = registrations.filter(r => r.attendanceStatus === 'present').length;
   const absentCount = registrations.filter(r => r.attendanceStatus === 'absent').length;
 
@@ -792,10 +868,10 @@ export function AttendancePage() {
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-green-400 underline-offset-4">Attendance</h2>
       <div className="space-y-1.5">
         <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Select Event</label>
-        <select value={selectedEvent} onChange={e => { stopScanner(); setSelectedEvent(e.target.value); }}
+        <select value={selectedEvent} onChange={e => { stopScanner(); setSelectedEvent(e.target.value); setManualId(''); setManualResult(''); setScanResult(''); }}
           className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
           <option value="">Choose event...</option>
-          {events.filter(e => e.status === 'approved').map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+          {events.filter(e => e.status === 'approved').map(e => <option key={e.id} value={e.id}>{e.title} ({e.registeredCount || 0} registered)</option>)}
         </select>
       </div>
 
@@ -819,107 +895,128 @@ export function AttendancePage() {
 
           {/* Mode Tabs */}
           <div className="flex gap-2">
-            {([['qr', 'QR Code'], ['scan', 'Scanner'], ['manual', 'Manual']] as const).map(([m, label]) => (
+            {([['scan', '📷 Scan QR'], ['manual', '⌨️ Manual Entry']] as const).map(([m, label]) => (
               <button key={m} onClick={() => { if (m !== 'scan') stopScanner(); setMode(m); }}
-                className={`border-[2px] border-black px-4 py-1.5 font-black uppercase text-[9px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${mode === m ? 'bg-yellow-400' : 'bg-white'}`}>
+                className={`flex-1 border-[2px] border-black px-4 py-2 font-black uppercase text-[9px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${mode === m ? 'bg-yellow-400' : 'bg-white'}`}>
                 {label}
               </button>
             ))}
           </div>
 
-          {/* QR Code Display */}
-          {mode === 'qr' && (
-            <BrutalCard className="p-6 border-b-[5px] text-center space-y-4">
-              <h3 className="font-black uppercase text-sm italic">Event QR Code</h3>
-              <p className="text-[8px] font-bold opacity-50">Display this QR code at the venue. Students scan to check in.</p>
-              {qrDataUrl ? (
-                <div className="inline-block border-[3px] border-black rounded-xl p-3 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-                  <img src={qrDataUrl} alt="Event QR Code" className="w-64 h-64 mx-auto" />
-                </div>
-              ) : (
-                <p className="text-[9px] font-bold opacity-30">Generating QR code...</p>
-              )}
-              <p className="text-[7px] font-bold opacity-30 uppercase">Event ID: {selectedEvent}</p>
-              {qrDataUrl && (
-                <BrutalButton color={COLORS.yellow} className="text-[9px]" onClick={() => {
-                  const link = document.createElement('a');
-                  link.download = `qr_${selectedEvent}.png`;
-                  link.href = qrDataUrl;
-                  link.click();
-                }}>Download QR Code</BrutalButton>
-              )}
-            </BrutalCard>
-          )}
-
-          {/* QR Scanner */}
+          {/* QR Scanner Mode */}
           {mode === 'scan' && (
             <BrutalCard className="p-6 border-b-[5px] space-y-4">
-              <h3 className="font-black uppercase text-sm italic text-center">Scan Student QR</h3>
-              <p className="text-[8px] font-bold opacity-50 text-center">Point camera at student&apos;s QR code to mark attendance automatically.</p>
+              <h3 className="font-black uppercase text-sm italic text-center">Scan Student QR Code</h3>
+              <p className="text-[8px] font-bold opacity-50 text-center">
+                Point camera at student&apos;s QR code to mark attendance instantly. Duplicate scans are prevented.
+              </p>
               <div id="qr-scanner-container" ref={scannerRef} className="border-[2px] border-black rounded-xl overflow-hidden mx-auto" style={{ maxWidth: 400 }} />
               {scanResult && (
-                <div className={`border-[2px] rounded-xl p-3 text-center font-black text-[10px] uppercase italic ${scanResult.includes('✓') ? 'border-green-600 bg-green-50 text-green-700' : 'border-red-600 bg-red-50 text-red-700'}`}>
+                <div className={`border-[2.5px] rounded-xl p-3.5 text-center font-black text-[11px] uppercase italic shadow-[2px_2px_0px_0px_rgba(0,0,0,0.1)] ${
+                  scanResult.includes('✓') ? 'border-green-600 bg-green-50 text-green-700' :
+                  scanResult.includes('⚠') ? 'border-yellow-600 bg-yellow-50 text-yellow-700' :
+                  'border-red-600 bg-red-50 text-red-700'
+                }`}>
                   {scanResult}
                 </div>
               )}
               <div className="flex justify-center">
                 {!scanning ? (
-                  <BrutalButton color={COLORS.teal} className="text-[9px]" onClick={startScanner}>Start Scanner</BrutalButton>
+                  <BrutalButton color={COLORS.teal} className="text-[9px] px-6" onClick={startScanner}>Start Scanner</BrutalButton>
                 ) : (
-                  <BrutalButton color={COLORS.red} className="text-[9px]" onClick={stopScanner}>Stop Scanner</BrutalButton>
+                  <BrutalButton color={COLORS.red} className="text-[9px] px-6" onClick={stopScanner}>Stop Scanner</BrutalButton>
                 )}
               </div>
             </BrutalCard>
           )}
 
-          {/* Manual Attendance */}
+          {/* Manual Entry Mode */}
           {mode === 'manual' && (
-            <BrutalCard className="p-0 border-[2.5px] overflow-hidden">
-              <div className="p-3 border-b-[2.5px] border-black bg-black text-white">
-                <h3 className="text-[11px] font-black uppercase italic tracking-widest">Manual Check-in</h3>
-              </div>
-              <table className="w-full text-left font-bold">
-                <thead>
-                  <tr className="border-b-[2px] border-black text-[8px] uppercase opacity-40 italic tracking-widest bg-slate-50">
-                    <th className="p-3">Name</th>
-                    <th className="p-3">Department</th>
-                    <th className="p-3 text-center">Status</th>
-                    <th className="p-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[10px]">
-                  {registrations.length === 0 ? (
-                    <tr><td colSpan={4} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No participants registered</td></tr>
-                  ) : (
-                    registrations.map((r) => (
-                      <tr key={r.id} className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50">
-                        <td className="p-3 font-black uppercase">{r.userName || 'Unknown'}</td>
-                        <td className="p-3">{r.userDepartment || '—'}</td>
-                        <td className="p-3 text-center">
-                          <Badge text={r.attendanceStatus || 'pending'} color={r.attendanceStatus === 'present' ? COLORS.green : r.attendanceStatus === 'absent' ? COLORS.red : COLORS.yellow} />
-                        </td>
-                        <td className="p-3 flex gap-1.5 justify-end">
-                          <button
-                            onClick={() => handleMark(r.id, 'present')}
-                            disabled={marking === r.id || r.attendanceStatus === 'present'}
-                            className="w-7 h-7 bg-green-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
-                          >
-                            <CheckCircle className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleMark(r.id, 'absent')}
-                            disabled={marking === r.id || r.attendanceStatus === 'absent'}
-                            className="w-7 h-7 bg-red-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
-                          >
-                            <User className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </BrutalCard>
+            <div className="space-y-4">
+              {/* Quick ID Entry */}
+              <BrutalCard color={COLORS.yellow} className="p-5 border-b-[5px] space-y-3">
+                <h3 className="font-black uppercase text-sm italic">Quick Check-in by ID</h3>
+                <p className="text-[8px] font-bold opacity-50">Enter the student&apos;s Registration ID (e.g. REG-TECH-ABC123) to mark attendance.</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={manualId}
+                    onChange={e => setManualId(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleManualCheckin(); }}
+                    placeholder="Enter Registration ID..."
+                    className="flex-1 border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none uppercase placeholder:normal-case"
+                  />
+                  <BrutalButton
+                    color={COLORS.green}
+                    className="text-[9px] px-5 shrink-0"
+                    onClick={handleManualCheckin}
+                    disabled={!manualId.trim() || manualSearching}
+                  >
+                    {manualSearching ? '...' : '✓ Check In'}
+                  </BrutalButton>
+                </div>
+                {manualResult && (
+                  <div className={`border-[2.5px] rounded-xl p-3 text-center font-black text-[10px] uppercase italic ${
+                    manualResult.includes('✓') ? 'border-green-600 bg-green-50 text-green-700' :
+                    manualResult.includes('⚠') ? 'border-yellow-600 bg-yellow-50 text-yellow-700' :
+                    'border-red-600 bg-red-50 text-red-700'
+                  }`}>
+                    {manualResult}
+                  </div>
+                )}
+              </BrutalCard>
+
+              {/* Full Participant List */}
+              <BrutalCard className="p-0 border-[2.5px] overflow-hidden">
+                <div className="p-3 border-b-[2.5px] border-black bg-black text-white flex justify-between items-center">
+                  <h3 className="text-[11px] font-black uppercase italic tracking-widest">All Participants</h3>
+                  <span className="text-[8px] font-bold opacity-60">{presentCount}/{registrations.length} present</span>
+                </div>
+                <table className="w-full text-left font-bold">
+                  <thead>
+                    <tr className="border-b-[2px] border-black text-[8px] uppercase opacity-40 italic tracking-widest bg-slate-50">
+                      <th className="p-3">Name</th>
+                      <th className="p-3 hidden sm:table-cell">Dept</th>
+                      <th className="p-3 hidden sm:table-cell">Reg ID</th>
+                      <th className="p-3 text-center">Status</th>
+                      <th className="p-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[10px]">
+                    {registrations.length === 0 ? (
+                      <tr><td colSpan={5} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No participants registered</td></tr>
+                    ) : (
+                      registrations.map((r) => (
+                        <tr key={r.id} className={`border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50 ${r.attendanceStatus === 'present' ? 'bg-green-50/50' : ''}`}>
+                          <td className="p-3 font-black uppercase">{r.userName || 'Unknown'}</td>
+                          <td className="p-3 hidden sm:table-cell">{r.userDepartment || '—'}</td>
+                          <td className="p-3 hidden sm:table-cell text-[8px] opacity-50">{r.registrationId || r.id?.slice(0, 8)}</td>
+                          <td className="p-3 text-center">
+                            <Badge text={r.attendanceStatus || 'pending'} color={r.attendanceStatus === 'present' ? COLORS.green : r.attendanceStatus === 'absent' ? COLORS.red : COLORS.yellow} />
+                          </td>
+                          <td className="p-3 flex gap-1.5 justify-end">
+                            <button
+                              onClick={() => handleMark(r.id, 'present')}
+                              disabled={marking === r.id || r.attendanceStatus === 'present'}
+                              className="w-7 h-7 bg-green-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleMark(r.id, 'absent')}
+                              disabled={marking === r.id || r.attendanceStatus === 'absent'}
+                              className="w-7 h-7 bg-red-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
+                            >
+                              <User className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </BrutalCard>
+            </div>
           )}
         </>
       )}
@@ -1331,43 +1428,116 @@ export function VenueManagement() {
   const [newName, setNewName] = useState('');
   const [newLocation, setNewLocation] = useState('');
   const [newCapacity, setNewCapacity] = useState('');
+  const [newFacilities, setNewFacilities] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editId, setEditId] = useState<string | null>(null);
+
+  const filteredVenues = venues.filter(v => 
+    v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    v.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (v.facilities || []).some(f => f.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   useEffect(() => { fetchVenues(); }, [fetchVenues]);
 
-  const handleAdd = async () => {
-    if (!newName) return;
-    await createVenue({ name: newName, location: newLocation, capacity: parseInt(newCapacity) || 50, facilities: [], isActive: true });
-    setNewName(''); setNewLocation(''); setNewCapacity('');
+  const handleSave = async () => {
+    if (!newName.trim()) return;
+
+    const existingDuplicate = venues.find(
+      v => 
+        v.name.toLowerCase() === newName.toLowerCase().trim() && 
+        v.location.toLowerCase() === newLocation.toLowerCase().trim()
+    );
+
+    if (existingDuplicate && existingDuplicate.id !== editId) {
+      alert('A venue with this name and location already exists!');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const facilitiesArray = newFacilities ? newFacilities.split(',').map(f => f.trim()).filter(Boolean) : [];
+      if (editId) {
+        await updateVenue(editId, { name: newName.trim(), location: newLocation.trim(), capacity: parseInt(newCapacity) || 50, facilities: facilitiesArray });
+      } else {
+        await createVenue({ name: newName.trim(), location: newLocation.trim(), capacity: parseInt(newCapacity) || 50, facilities: facilitiesArray, isActive: true });
+      }
+      resetForm();
+      await fetchVenues();
+    } catch (error: any) {
+      console.error(error);
+      alert('Failed to save venue: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resetForm = () => {
+    setNewName(''); setNewLocation(''); setNewCapacity(''); setNewFacilities('');
+    setEditId(null);
     setShowForm(false);
-    fetchVenues();
+  };
+
+  const handleEdit = (venue: Venue) => {
+    setEditId(venue.id);
+    setNewName(venue.name);
+    setNewLocation(venue.location);
+    setNewCapacity(venue.capacity.toString());
+    setNewFacilities((venue.facilities || []).join(', '));
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">Venue Management</h2>
-        <BrutalButton color={COLORS.yellow} className="text-[9px]" onClick={() => setShowForm(!showForm)}>+ Add Venue</BrutalButton>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-64">
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+              <Search className="w-4 h-4 opacity-40" />
+            </div>
+            <input
+              type="text"
+              placeholder="Search venues..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full border-[2.5px] border-black py-2 pl-9 pr-3 text-[10px] font-bold rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:shadow-none transition-all"
+            />
+          </div>
+          <BrutalButton color={COLORS.yellow} className="text-[9px] shrink-0" onClick={() => {
+            if (!showForm || editId) {
+              resetForm();
+            }
+            setShowForm(!showForm);
+          }}>{showForm && !editId ? 'Cancel' : '+ Add Venue'}</BrutalButton>
+        </div>
       </div>
 
       {showForm && (
         <BrutalCard className="p-5 space-y-4 border-b-[6px]" color={COLORS.yellow}>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <h3 className="font-black uppercase text-sm italic">{editId ? 'Edit Venue' : 'Create New Venue'}</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <BrutalInput placeholder="Venue Name" value={newName} onChange={e => setNewName(e.target.value)} />
             <BrutalInput placeholder="Location" value={newLocation} onChange={e => setNewLocation(e.target.value)} />
             <BrutalInput placeholder="Capacity" type="number" value={newCapacity} onChange={e => setNewCapacity(e.target.value)} />
+            <BrutalInput placeholder="Facilities (comma-separated)" value={newFacilities} onChange={e => setNewFacilities(e.target.value)} />
           </div>
           <div className="flex gap-2">
-            <BrutalButton color={COLORS.teal} onClick={handleAdd}>Save Venue</BrutalButton>
-            <BrutalButton color="white" onClick={() => setShowForm(false)}>Cancel</BrutalButton>
+            <BrutalButton color={COLORS.teal} onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving...' : (editId ? 'Update Venue' : 'Save Venue')}
+            </BrutalButton>
+            <BrutalButton color="white" onClick={resetForm} disabled={saving}>Cancel</BrutalButton>
           </div>
         </BrutalCard>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {venues.length === 0 && !loading ? (
-          <BrutalCard className="col-span-3 p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">No venues. Add one or run the seed API.</p></BrutalCard>
+        {filteredVenues.length === 0 && !loading ? (
+          <BrutalCard className="col-span-3 p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">No venues found.</p></BrutalCard>
         ) : (
-          venues.map((venue) => (
+          filteredVenues.map((venue) => (
             <BrutalCard key={venue.id} className="p-4 border-b-[5px]">
               <div className="flex justify-between mb-2">
                 <h4 className="font-black uppercase text-sm italic">{venue.name}</h4>
@@ -1383,6 +1553,7 @@ export function VenueManagement() {
                 </div>
               )}
               <div className="flex gap-2 mt-3">
+                <BrutalButton color={COLORS.yellow} className="flex-1 text-[8px] py-1" onClick={() => handleEdit(venue)}>Edit</BrutalButton>
                 <BrutalButton color="white" className="flex-1 text-[8px] py-1" onClick={() => updateVenue(venue.id, { isActive: !venue.isActive }).then(() => fetchVenues())}>
                   {venue.isActive ? 'Disable' : 'Enable'}
                 </BrutalButton>
@@ -1398,26 +1569,81 @@ export function VenueManagement() {
 
 /* ===== Admin: User Management ===== */
 export function UserManagement() {
+  const { profile } = useAuthStore();
+  const { createNotification } = useNotifications(profile?.uid);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Track pending operations to avoid data clobbering from background sync
+  const pendingUpdates = useRef<Record<string, string>>({});
+
+  const filteredUsers = users.filter(u => 
+    (u.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (u.department || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const loadUsers = useCallback(async () => {
-    setLoading(true);
+    // Only show loading if we haven't loaded initial data yet
+    setLoading(users.length === 0);
     const data = await queryDocs<UserProfile>('users', []);
-    setUsers(data);
+    // Merge strategy: preserve optimistic role if user is in pendingUpdates
+    setUsers(data.map(serverUser => {
+      const uid = serverUser.id || serverUser.uid;
+      if (uid && typeof uid === 'string' && pendingUpdates.current[uid]) {
+        return { ...serverUser, role: pendingUpdates.current[uid] as any };
+      }
+      return serverUser;
+    }));
     setLoading(false);
-  }, []);
+  }, [users.length]);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
-  const changeRole = async (uid: string, newRole: string) => {
-    await updateDocument('users', uid, { role: newRole });
-    loadUsers();
+  const changeRole = async (targetId: string, newRole: string) => {
+    try {
+      if (!targetId) throw new Error("Invalid user ID");
+      
+      // Optimistic Update and Mark as Pending
+      pendingUpdates.current[targetId] = newRole;
+      setUsers(prev => prev.map(u => (u.id || u.uid) === targetId ? { ...u, role: newRole as any } : u));
+      
+      await updateDocument('users', targetId, { role: newRole });
+      
+      if (profile?.uid) {
+        await createNotification(profile.uid, 'Role Updated', `User role successfully updated to ${newRole}.`, 'system');
+      }
+    } catch (error: any) {
+      console.error("Role update failed:", error);
+      if (profile?.uid) {
+        await createNotification(profile.uid, 'Update Failed', `Failed to update role: ${error.message}`, 'system');
+      }
+    } finally {
+      // Clear pending state and sync background safely
+      if (targetId) delete pendingUpdates.current[targetId];
+      loadUsers();
+    }
   };
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-pink-400 underline-offset-4">User Management</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-pink-400 underline-offset-4">User Management</h2>
+        <div className="relative w-full sm:w-64">
+          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+            <Search className="w-4 h-4 opacity-40" />
+          </div>
+          <input
+            type="text"
+            placeholder="Search users..."
+            aria-label="Search users"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full border-[2.5px] border-black py-2 pl-9 pr-3 text-[10px] font-bold rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none focus:shadow-none transition-all"
+          />
+        </div>
+      </div>
       <BrutalCard className="p-0 border-[2.5px] overflow-hidden">
         <table className="w-full text-left font-bold">
           <thead>
@@ -1430,11 +1656,11 @@ export function UserManagement() {
             </tr>
           </thead>
           <tbody className="text-[10px]">
-            {users.length === 0 && !loading ? (
+            {filteredUsers.length === 0 && !loading ? (
               <tr><td colSpan={5} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No users found</td></tr>
             ) : (
-              users.map((u) => (
-                <tr key={u.uid} className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50">
+              filteredUsers.map((u) => (
+                <tr key={u.id || u.uid} className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50">
                   <td className="p-3 font-black uppercase">{u.name || 'Unknown'}</td>
                   <td className="p-3">{u.email}</td>
                   <td className="p-3">{u.department || '—'}</td>
@@ -1442,7 +1668,7 @@ export function UserManagement() {
                     <Badge text={u.role || 'student'} color={u.role === 'admin' ? COLORS.lavender : u.role === 'organizer' ? COLORS.teal : COLORS.yellow} />
                   </td>
                   <td className="p-3 text-center">
-                    <select value={u.role || 'student'} onChange={e => changeRole(u.uid, e.target.value)}
+                    <select value={u.role || 'student'} onChange={e => changeRole(u.id || u.uid, e.target.value)}
                       className="border-[2px] border-black rounded-lg px-2 py-1 text-[9px] font-black bg-white">
                       <option value="student">Student</option>
                       <option value="organizer">Organizer</option>
@@ -1465,13 +1691,14 @@ export function SystemNotificationsPage() {
   const { notifications, broadcastNotification } = useNotifications(profile?.uid);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [audience, setAudience] = useState('broadcast');
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
 
   const handleSend = async () => {
     if (!profile || !message) return;
     setSending(true);
-    await broadcastNotification(subject || 'System Notification', message, 'system');
+    await broadcastNotification(subject || 'System Notification', message, 'system', undefined, audience);
     setSending(false);
     setSent(true);
     setMessage('');
@@ -1480,7 +1707,7 @@ export function SystemNotificationsPage() {
   };
 
   // Show broadcast notifications from history
-  const broadcastHistory = notifications.filter(n => n.type === 'system');
+  const broadcastHistory = notifications.filter(n => (n.userId || '').startsWith('broadcast'));
 
   return (
     <div className="space-y-6">
@@ -1488,7 +1715,16 @@ export function SystemNotificationsPage() {
 
       {/* Send form */}
       <BrutalCard className="p-6 space-y-5 border-b-[6px]">
-        <h3 className="font-black uppercase text-sm italic">Broadcast to All Users</h3>
+        <div className="flex justify-between items-center">
+          <h3 className="font-black uppercase text-sm italic">Broadcast Announcement</h3>
+          <select value={audience} onChange={e => setAudience(e.target.value)}
+            className="border-[2.5px] border-black rounded-lg px-3 py-1 text-[10px] font-black bg-yellow-400 outline-none uppercase italic shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] cursor-pointer">
+            <option value="broadcast">All Users</option>
+            <option value="broadcast_student">Students Only</option>
+            <option value="broadcast_organizer">Organizers Only</option>
+            <option value="broadcast_admin">Admins Only</option>
+          </select>
+        </div>
         <div className="space-y-1.5">
           <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Subject</label>
           <BrutalInput placeholder="Notification subject..." value={subject} onChange={e => setSubject(e.target.value)} />
