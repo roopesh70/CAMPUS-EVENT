@@ -16,8 +16,10 @@ import { useActivityLogs } from '@/hooks/useActivityLogs';
 import { useTasks } from '@/hooks/useTasks';
 import { useCertificates } from '@/hooks/useCertificates';
 import { useSettings } from '@/hooks/useSettings';
+import { useCloudinary } from '@/hooks/useCloudinary';
 import { queryDocs, updateDocument, where, orderBy } from '@/lib/firestore';
 import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue, Certificate } from '@/types';
+import { Timestamp } from 'firebase/firestore';
 import { Bell, Mail, Info, LogIn, Award, MessageSquare, CheckSquare, User, FileText, Users, CheckCircle, BarChart2, MapPin, Settings, Database, Activity, Send, Calendar, Search } from 'lucide-react';
 
 /* ===== Public: Announcements ===== */
@@ -641,8 +643,30 @@ export function ProfilePage() {
 /* ===== Organizer: My Events ===== */
 export function OrganizerMyEvents() {
   const { profile } = useAuthStore();
-  const { events, fetchOrganizerEvents } = useEvents();
+  const { events, fetchOrganizerEvents, deleteEvent, updateEvent } = useEvents();
+  const { venues, fetchVenues } = useVenues();
+  const { uploadImage, uploading, progress: uploadProgress } = useCloudinary();
+  const { logActivity } = useActivityLogs();
+  
   const [tab, setTab] = useState('all');
+  const [editingEvent, setEditingEvent] = useState<CampusEvent | null>(null);
+  const [editForm, setEditForm] = useState<Partial<CampusEvent>>({});
+  
+  // Date/Time States
+  const [date, setDate] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [regDeadline, setRegDeadline] = useState('');
+  
+  // Poster State
+  const [posterFile, setPosterFile] = useState<File | null>(null);
+  const [posterPreview, setPosterPreview] = useState('');
+  
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchVenues();
+  }, [fetchVenues]);
 
   useEffect(() => {
     if (profile?.uid) fetchOrganizerEvents(profile.uid);
@@ -651,6 +675,96 @@ export function OrganizerMyEvents() {
   const handleOutcome = async (eventId: string, outcome: 'success' | 'failed') => {
     await updateDocument('events', eventId, { outcomeStatus: outcome, status: 'completed' });
     if (profile?.uid) fetchOrganizerEvents(profile.uid);
+  };
+
+  const handleDelete = async (evt: CampusEvent) => {
+    if (confirm(`Are you sure you want to completely delete "${evt.title}"?\nThis action cannot be undone.`)) {
+      await deleteEvent(evt.id);
+      if (profile) await logActivity(profile.uid, profile.name, 'organizer', 'delete_event', evt.id, 'event', evt.title);
+      if (profile?.uid) fetchOrganizerEvents(profile.uid);
+    }
+  };
+
+  const handleEditSave = async () => {
+    if (!editingEvent || !profile) return;
+    setSaving(true);
+    
+    let venueName = editingEvent.venueName;
+    if (editForm.venueId && editForm.venueId !== editingEvent.venueId) {
+      const v = venues.find(x => x.id === editForm.venueId);
+      if (v) venueName = v.name;
+    }
+
+    let finalPosterUrl = editingEvent.posterUrl;
+    if (posterFile) {
+      try { finalPosterUrl = await uploadImage(posterFile); }
+      catch { finalPosterUrl = posterPreview; }
+    }
+
+    const startTs = Timestamp.fromDate(new Date(`${date}T${startTime || '09:00'}`));
+    const endTs = Timestamp.fromDate(new Date(`${date}T${endTime || '17:00'}`));
+
+    const payload: Partial<CampusEvent> = { 
+      ...editForm, 
+      ...(editForm.venueId ? { venueName } : {}),
+      startTime: startTs,
+      endTime: endTs,
+      posterUrl: finalPosterUrl,
+    };
+    
+    if (regDeadline) {
+      payload.registrationDeadline = Timestamp.fromDate(new Date(`${regDeadline}T23:59`));
+    }
+
+    await updateEvent(editingEvent.id, payload);
+    await logActivity(profile.uid, profile.name, 'organizer', 'update_event', editingEvent.id, 'event', editForm.title || editingEvent.title);
+    
+    setEditingEvent(null);
+    setEditForm({});
+    setSaving(false);
+    fetchOrganizerEvents(profile.uid);
+  };
+
+  const handlePosterSelect = (file: File) => {
+    setPosterFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setPosterPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const openEdit = (evt: CampusEvent) => {
+    setEditingEvent(evt);
+    setEditForm({
+      title: evt.title,
+      description: evt.description,
+      capacity: evt.capacity,
+      venueId: evt.venueId,
+      category: evt.category,
+      department: evt.department,
+      targetAudience: evt.targetAudience,
+      expectedAttendance: evt.expectedAttendance,
+      budget: evt.budget,
+      coOrganizers: evt.coOrganizers,
+    });
+    
+    if (evt.startTime?.toDate) {
+      const startD = evt.startTime.toDate();
+      setDate(`${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}-${String(startD.getDate()).padStart(2, '0')}`);
+      setStartTime(`${String(startD.getHours()).padStart(2, '0')}:${String(startD.getMinutes()).padStart(2, '0')}`);
+    } else { setDate(''); setStartTime(''); }
+
+    if (evt.endTime?.toDate) {
+      const endD = evt.endTime.toDate();
+      setEndTime(`${String(endD.getHours()).padStart(2, '0')}:${String(endD.getMinutes()).padStart(2, '0')}`);
+    } else { setEndTime(''); }
+
+    if (evt.registrationDeadline?.toDate) {
+      const dD = evt.registrationDeadline.toDate();
+      setRegDeadline(`${dD.getFullYear()}-${String(dD.getMonth() + 1).padStart(2, '0')}-${String(dD.getDate()).padStart(2, '0')}`);
+    } else { setRegDeadline(''); }
+
+    setPosterFile(null);
+    setPosterPreview(evt.posterUrl || '');
   };
 
   const filtered = tab === 'all' ? events : events.filter(e => e.status === tab);
@@ -673,9 +787,15 @@ export function OrganizerMyEvents() {
           filtered.map((evt) => (
             <BrutalCard key={evt.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4">
               <div className="flex items-center gap-3">
-                <div className="w-16 h-16 bg-slate-200 border-[2px] border-black rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
-                  <span className="text-2xl font-black opacity-10">{evt.category[0].toUpperCase()}</span>
-                </div>
+                {evt.posterUrl ? (
+                  <div className="w-16 h-16 border-[2px] border-black rounded-lg shrink-0 overflow-hidden">
+                    <img src={evt.posterUrl} alt={evt.title} className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="w-16 h-16 bg-slate-200 border-[2px] border-black rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
+                    <span className="text-2xl font-black opacity-10">{evt.category[0].toUpperCase()}</span>
+                  </div>
+                )}
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <Badge text={evt.category} color={COLORS.teal} />
@@ -685,10 +805,13 @@ export function OrganizerMyEvents() {
                     )}
                   </div>
                   <h4 className="font-black uppercase text-[12px] italic">{evt.title}</h4>
-                  <p className="text-[8px] font-bold opacity-40 uppercase">{Math.max(evt.registeredCount || 0, 0)}/{evt.capacity} registered</p>
+                  <p className="text-[8px] font-bold opacity-40 uppercase truncate max-w-[200px]">{evt.venueName} • {Math.max(evt.registeredCount || 0, 0)}/{evt.capacity} registered</p>
                 </div>
               </div>
               <div className="flex gap-2">
+                <BrutalButton color={COLORS.yellow} className="px-3 py-1 text-[9px]" onClick={() => openEdit(evt)}>Edit</BrutalButton>
+                <BrutalButton color={COLORS.red} className="px-3 py-1 text-[9px]" onClick={() => handleDelete(evt)}>Delete</BrutalButton>
+                
                 {evt.status === 'approved' && !evt.outcomeStatus && (
                   <>
                     <BrutalButton color={COLORS.green} className="px-3 py-1 text-[8px]" onClick={() => handleOutcome(evt.id, 'success')}>✓ Success</BrutalButton>
@@ -700,6 +823,131 @@ export function OrganizerMyEvents() {
           ))
         )}
       </div>
+
+      {/* Edit Event Modal */}
+      {editingEvent && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-80 flex items-center justify-center p-4">
+          <BrutalCard className="w-full max-w-2xl max-h-[90vh] flex flex-col p-0 border-[4px] bg-[#FFFBEB]">
+            <div className="p-5 border-b-[4px] border-black flex justify-between items-center bg-yellow-400">
+              <h3 className="font-black uppercase italic text-xl">Edit Event</h3>
+              <button onClick={() => setEditingEvent(null)} className="font-black text-xl leading-none">&times;</button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-5">
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Title</label>
+                <BrutalInput value={editForm.title || ''} onChange={e => setEditForm({...editForm, title: e.target.value})} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Category</label>
+                  <select value={editForm.category || ''} onChange={e => setEditForm({...editForm, category: e.target.value as any})}
+                    className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+                    <option value="technical">Technical Workshop</option>
+                    <option value="cultural">Cultural Festival</option>
+                    <option value="sports">Sports</option>
+                    <option value="academic">Academic</option>
+                    <option value="competition">Competition</option>
+                    <option value="social">Social</option>
+                    <option value="workshop">Workshop</option>
+                    <option value="seminar">Seminar</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Venue</label>
+                  <select value={editForm.venueId || ''} onChange={e => setEditForm({...editForm, venueId: e.target.value})}
+                    className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+                    {venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Capacity</label>
+                  <BrutalInput type="number" value={editForm.capacity || ''} onChange={e => setEditForm({...editForm, capacity: parseInt(e.target.value) || 0})} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Expected Attendance</label>
+                  <BrutalInput type="number" value={editForm.expectedAttendance || ''} onChange={e => setEditForm({...editForm, expectedAttendance: parseInt(e.target.value) || 0})} />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Department</label>
+                <BrutalInput value={editForm.department || ''} onChange={e => setEditForm({...editForm, department: e.target.value})} />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Description</label>
+                <textarea 
+                  value={editForm.description || ''} 
+                  onChange={e => setEditForm({...editForm, description: e.target.value})}
+                  className="w-full border-[2.5px] border-black p-3 font-bold text-xs h-24 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Date</label>
+                  <BrutalInput type="date" value={date} onChange={e => setDate(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Registration Deadline</label>
+                  <BrutalInput type="date" value={regDeadline} onChange={e => setRegDeadline(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Start Time</label>
+                  <BrutalInput type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">End Time</label>
+                  <BrutalInput type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Update Poster (Optional)</label>
+                <div
+                  className={`border-[2.5px] border-dashed border-black rounded-xl p-4 text-center cursor-pointer transition-colors ${posterPreview ? 'bg-green-50' : 'hover:bg-yellow-50'}`}
+                  onClick={() => document.getElementById('edit-poster-input')?.click()}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={e => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files[0]; if (f) handlePosterSelect(f); }}
+                >
+                  {posterPreview ? (
+                    <div className="space-y-2">
+                      <img src={posterPreview} alt="Poster preview" className="max-h-32 mx-auto rounded-lg border-[2px] border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]" />
+                      <p className="text-[9px] font-black uppercase opacity-40">Click or drag to replace</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 py-4">
+                      <div className="w-8 h-8 border-[2px] border-black rounded-lg bg-yellow-400 mx-auto flex items-center justify-center text-sm">📷</div>
+                      <p className="text-[10px] font-black uppercase italic">Drop poster here or click to browse</p>
+                    </div>
+                  )}
+                </div>
+                <input id="edit-poster-input" type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handlePosterSelect(f); }} />
+                {uploading && (
+                  <div className="w-full bg-slate-200 border-[2px] border-black rounded-full h-3 overflow-hidden">
+                    <div className="h-full bg-yellow-400 transition-all font-black text-[7px] flex items-center justify-center" style={{ width: `${uploadProgress}%` }}>
+                      {uploadProgress}%
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-5 border-t-[4px] border-black bg-white flex justify-end gap-3">
+              <BrutalButton color={COLORS.pink} onClick={() => setEditingEvent(null)}>Cancel</BrutalButton>
+              <BrutalButton color={COLORS.green} onClick={handleEditSave} disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</BrutalButton>
+            </div>
+          </BrutalCard>
+        </div>
+      )}
     </div>
   );
 }
@@ -1659,6 +1907,7 @@ export function VenueManagement() {
 export function UserManagement() {
   const { profile } = useAuthStore();
   const { createNotification } = useNotifications(profile?.uid);
+  const { logActivity } = useActivityLogs();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1705,6 +1954,7 @@ export function UserManagement() {
       setUsers(prev => prev.map(u => (u.id || u.uid) === targetId ? { ...u, role: newRole as any } : u));
       
       await updateDocument('users', targetId, { role: newRole });
+      if (profile) await logActivity(profile.uid, profile.name, 'admin', 'update_role', targetId, 'user', `${newRole}`);
       
       if (profile?.uid) {
         await createNotification(profile.uid, 'Role Updated', `User role successfully updated to ${newRole}.`, 'system');

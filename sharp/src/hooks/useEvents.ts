@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  queryDocs, addDocument, updateDocument, getDocument,
+  queryDocs, addDocument, updateDocument, getDocument, deleteDocument,
   listenToCollection, where, orderBy, limit, serverTimestamp, increment,
   doc, db,
 } from '@/lib/firestore';
@@ -109,6 +109,11 @@ export function useEvents() {
     await updateDocument('events', eventId, data);
   }, []);
 
+  // Delete event
+  const deleteEvent = useCallback(async (eventId: string) => {
+    await deleteDocument('events', eventId);
+  }, []);
+
   // Listen to events in real-time
   const subscribeToEvents = useCallback((
     constraints: Parameters<typeof listenToCollection>[1] = [orderBy('startTime', 'asc')]
@@ -119,6 +124,6 @@ export function useEvents() {
   return {
     events, loading,
     fetchPublicEvents, fetchOrganizerEvents, fetchEventsByStatus, fetchAllEvents,
-    getEvent, createEvent, updateEventStatus, updateEvent, subscribeToEvents,
+    getEvent, createEvent, updateEventStatus, updateEvent, deleteEvent, subscribeToEvents,
   };
 }

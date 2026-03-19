@@ -200,9 +200,15 @@ export function AdminApprovals() {
         ) : (
           events.map((evt) => (
             <BrutalCard key={evt.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-              <div className="w-24 h-24 bg-slate-200 border-[2px] border-black rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
-                <span className="font-black text-3xl opacity-10">{evt.category[0].toUpperCase()}</span>
-              </div>
+              {evt.posterUrl ? (
+                <div className="w-24 h-24 border-[2px] border-black rounded-lg shrink-0 overflow-hidden">
+                  <img src={evt.posterUrl} alt={evt.title} className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className="w-24 h-24 bg-slate-200 border-[2px] border-black rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
+                  <span className="font-black text-3xl opacity-10">{evt.category[0].toUpperCase()}</span>
+                </div>
+              )}
               <div className="flex-1 space-y-1">
                 <div className="flex items-center gap-2">
                   <Badge text={evt.category} color={COLORS.teal} />

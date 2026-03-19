@@ -241,7 +241,11 @@ export function ExploreEvents() {
             return (
               <BrutalCard key={evt.id} className="p-0 group overflow-hidden border-b-[5px]" onClick={() => handleOpenEvent(evt)}>
                 <div className="h-32 border-b-[2px] border-black bg-slate-100 overflow-hidden flex items-center justify-center relative">
-                  <span className="text-5xl font-black opacity-5 uppercase group-hover:scale-110 transition-transform">{evt.category}</span>
+                  {evt.posterUrl ? (
+                    <img src={evt.posterUrl} alt={evt.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                  ) : (
+                    <span className="text-5xl font-black opacity-5 uppercase group-hover:scale-110 transition-transform">{evt.category}</span>
+                  )}
                   <div className="absolute top-2 right-2"><Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.yellow} /></div>
                 </div>
                 <div className="p-4 space-y-2">

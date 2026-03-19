@@ -12,6 +12,7 @@ import { useEvents } from '@/hooks/useEvents';
 import { useVenues } from '@/hooks/useVenues';
 import { useTasks } from '@/hooks/useTasks';
 import { useCloudinary } from '@/hooks/useCloudinary';
+import { useActivityLogs } from '@/hooks/useActivityLogs';
 import { useUIStore } from '@/stores/uiStore';
 import type { CampusEvent, EventCategory } from '@/types';
 import { Timestamp } from 'firebase/firestore';
@@ -120,6 +121,7 @@ export function CreateEventFlow() {
   const { events: allEvents, createEvent, fetchPublicEvents } = useEvents();
   const { venues, fetchVenues } = useVenues();
   const { uploadImage, uploading, progress: uploadProgress } = useCloudinary();
+  const { logActivity } = useActivityLogs();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -216,7 +218,7 @@ export function CreateEventFlow() {
     const startTs = Timestamp.fromDate(new Date(`${date}T${startTime || '09:00'}`));
     const endTs = Timestamp.fromDate(new Date(`${date}T${endTime || '17:00'}`));
 
-    await createEvent({
+    const newEventId = await createEvent({
       title,
       description,
       category,
@@ -243,6 +245,10 @@ export function CreateEventFlow() {
       budget,
       ...(regDeadline ? { registrationDeadline: Timestamp.fromDate(new Date(`${regDeadline}T23:59`)) } : {}),
     });
+
+    if (profile) {
+      await logActivity(profile.uid, profile.name, 'organizer', 'create_event', newEventId, 'event', title);
+    }
 
     setSubmitting(false);
     setSuccess(true);

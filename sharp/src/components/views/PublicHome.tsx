@@ -72,8 +72,12 @@ export function PublicHome() {
               const color = cats[evt.category]?.color || COLORS.teal;
               return (
                 <BrutalCard key={evt.id} className="p-0 group overflow-hidden border-b-[5px]">
-                  <div className="h-36 border-b-[2px] border-black bg-slate-100 overflow-hidden flex items-center justify-center">
-                    <span className="text-6xl font-black opacity-5 uppercase">{evt.category[0]}</span>
+                  <div className="h-36 border-b-[2px] border-black bg-slate-100 overflow-hidden flex items-center justify-center relative">
+                    {evt.posterUrl ? (
+                      <img src={evt.posterUrl} alt={evt.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                    ) : (
+                      <span className="text-6xl font-black opacity-5 uppercase group-hover:scale-110 transition-transform">{evt.category[0]}</span>
+                    )}
                   </div>
                   <div className="p-4 space-y-2">
                     <Badge text={evt.category} color={color} />

@@ -171,10 +171,16 @@ export function StudentDashboard() {
                 const d = formatDate(event.startTime);
                 return (
                   <BrutalCard key={event.id} className="flex items-center gap-5 p-4 border-l-[8px] border-l-black group hover:bg-slate-50">
-                    <div className="w-12 h-12 border-[2px] border-black flex flex-col items-center justify-center shrink-0 bg-yellow-400 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] group-hover:shadow-none transition-all">
-                      <span className="text-lg font-black leading-none">{d.day}</span>
-                      <span className="text-[7px] font-black uppercase">{d.month}</span>
-                    </div>
+                    {event.posterUrl ? (
+                      <div className="w-12 h-12 shrink-0 rounded-lg overflow-hidden border-[2px] border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                        <img src={event.posterUrl} alt={event.title} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 border-[2px] border-black flex flex-col items-center justify-center shrink-0 bg-yellow-400 rounded-lg shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] group-hover:shadow-none transition-all">
+                        <span className="text-lg font-black leading-none">{d.day}</span>
+                        <span className="text-[7px] font-black uppercase">{d.month}</span>
+                      </div>
+                    )}
                     <div className="flex-1">
                       <h4 className="text-[13px] font-black uppercase italic leading-tight">{event.title}</h4>
                       <p className="text-[9px] font-bold opacity-50 uppercase mt-0.5 tracking-tight">{event.venueName} • {d.time}</p>
@@ -227,9 +233,15 @@ export function StudentDashboard() {
                 return (
                   <BrutalCard key={evt.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer border-l-[6px]" style={{ borderLeftColor: color }}
                     onClick={() => setActiveTab('discover')}>
-                    <div className="w-9 h-9 rounded-lg border-[2px] border-black flex items-center justify-center shrink-0 text-md" style={{ backgroundColor: color }}>
-                      {evt.category === 'technical' ? '💻' : evt.category === 'cultural' ? '🎭' : evt.category === 'sports' ? '🏆' : evt.category === 'academic' ? '📚' : evt.category === 'workshop' ? '🔧' : '🎉'}
-                    </div>
+                    {evt.posterUrl ? (
+                      <div className="w-9 h-9 shrink-0 rounded-lg overflow-hidden border-[2px] border-black">
+                        <img src={evt.posterUrl} alt={evt.title} className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-9 h-9 rounded-lg border-[2px] border-black flex items-center justify-center shrink-0 text-md" style={{ backgroundColor: color }}>
+                        {evt.category === 'technical' ? '💻' : evt.category === 'cultural' ? '🎭' : evt.category === 'sports' ? '🏆' : evt.category === 'academic' ? '📚' : evt.category === 'workshop' ? '🔧' : '🎉'}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <h4 className="text-[11px] font-black uppercase italic truncate">{evt.title}</h4>
                       <p className="text-[8px] font-bold opacity-40">{evt.category} • {Math.max(evt.registeredCount || 0, 0)}/{evt.capacity} registered</p>
