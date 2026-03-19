@@ -25,7 +25,8 @@ export function useActivityLogs() {
     role: string,
     action: string,
     entityId: string,
-    entityType: ActivityLog['entityType']
+    entityType: ActivityLog['entityType'],
+    entityName?: string
   ) => {
     await addDocument('activityLogs', {
       actorId,
@@ -34,6 +35,7 @@ export function useActivityLogs() {
       action,
       entityId,
       entityType,
+      ...(entityName && { entityName })
     });
   }, []);
 

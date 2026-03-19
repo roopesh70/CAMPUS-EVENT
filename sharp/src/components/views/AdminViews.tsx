@@ -119,7 +119,7 @@ function PendingRow({ event }: { event: CampusEvent }) {
   const handleAction = async (action: 'approved' | 'rejected') => {
     await updateEventStatus(event.id, action, action === 'rejected' ? 'Rejected by admin' : '');
     if (profile) {
-      await logActivity(profile.uid, profile.name, 'admin', `${action}_event`, event.id, 'event');
+      await logActivity(profile.uid, profile.name, 'admin', `${action}_event`, event.id, 'event', event.title);
       await createNotification(event.organizerId, `Event ${action}`, `Your event "${event.title}" has been ${action}.`, 'approval', event.id);
     }
     setActed(action);
@@ -169,7 +169,7 @@ export function AdminApprovals() {
     const comment = comments[evt.id] || '';
     await updateEventStatus(evt.id, 'approved', comment);
     if (profile) {
-      await logActivity(profile.uid, profile.name, 'admin', 'approved_event', evt.id, 'event');
+      await logActivity(profile.uid, profile.name, 'admin', 'approved_event', evt.id, 'event', evt.title);
       await createNotification(evt.organizerId, 'Event Approved!', `Your event "${evt.title}" has been approved.${comment ? ` Comment: ${comment}` : ''}`, 'approval', evt.id);
     }
     fetchEventsByStatus('pending');
@@ -179,7 +179,7 @@ export function AdminApprovals() {
     const comment = comments[evt.id] || 'No reason provided';
     await updateEventStatus(evt.id, 'rejected', comment);
     if (profile) {
-      await logActivity(profile.uid, profile.name, 'admin', 'rejected_event', evt.id, 'event');
+      await logActivity(profile.uid, profile.name, 'admin', 'rejected_event', evt.id, 'event', evt.title);
       await createNotification(evt.organizerId, 'Event Rejected', `Your event "${evt.title}" was rejected. Reason: ${comment}`, 'approval', evt.id);
     }
     fetchEventsByStatus('pending');

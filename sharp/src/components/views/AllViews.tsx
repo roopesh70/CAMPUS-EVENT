@@ -2234,8 +2234,17 @@ export function ActivityLogsPage() {
                   </td>
                   <td className={`sm:p-3 font-black uppercase block sm:table-cell mb-1 sm:mb-0 ${getActionColor(log.action)}`}>{log.action}</td>
                   <td className="sm:p-3 block sm:table-cell">
-                    <span className="bg-slate-200 border-[1px] border-black px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase mr-1">{log.entityType}</span>
-                    <span className="opacity-60 text-[8px] truncate inline-block max-w-[120px] align-bottom" title={log.entityId}>{log.entityId}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="bg-slate-200 border-[1px] border-black px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase break-none">{log.entityType}</span>
+                      {log.entityName ? (
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-black tracking-tight" title={log.entityId}>{log.entityName}</span>
+                          <span className="text-[7px] opacity-40 font-mono tracking-tighter hidden sm:block">ID: {log.entityId.substring(0, 8)}...</span>
+                        </div>
+                      ) : (
+                        <span className="opacity-60 text-[8px] truncate inline-block max-w-[120px] align-middle" title={log.entityId}>{log.entityId}</span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

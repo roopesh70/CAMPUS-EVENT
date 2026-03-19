@@ -186,6 +186,7 @@ export interface ActivityLog {
   role: string;
   action: string;
   entityId: string;
+  entityName?: string;
   entityType: EntityType;
   createdAt: Timestamp;
 }

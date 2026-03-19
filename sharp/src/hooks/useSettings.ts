@@ -37,7 +37,7 @@ export function useSettings() {
     } catch (err: any) {
       console.error('Failed to fetch settings:', err);
       // Fallback to defaults if strictly unreadable
-      setSettings({ ...DEFAULT_SETTINGS } as SystemSettings);
+      setSettings({ id: 'global', ...DEFAULT_SETTINGS } as SystemSettings);
       setError(err);
     } finally {
       setLoading(false);
