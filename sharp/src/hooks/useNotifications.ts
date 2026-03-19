@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  queryDocs, addDocument, updateDocument,
+  queryDocs, addDocument, updateDocument, deleteDocument,
   listenToCollection, where, orderBy,
 } from '@/lib/firestore';
 import { useAuthStore } from '@/stores/authStore';
@@ -107,8 +107,18 @@ export function useNotifications(userId: string | undefined) {
     });
   }, []);
 
+  // Delete notification
+  const deleteNotification = useCallback(async (notifId: string) => {
+    if (!notifId) return;
+    try {
+      await deleteDocument('notifications', notifId);
+    } catch (err) {
+      console.error('Failed to delete notification:', err);
+    }
+  }, []);
+
   return {
     notifications, unreadCount, loading,
-    markAsRead, markAllAsRead, createNotification, broadcastNotification,
+    markAsRead, markAllAsRead, createNotification, broadcastNotification, deleteNotification,
   };
 }

@@ -15,6 +15,7 @@ import { useFeedback } from '@/hooks/useFeedback';
 import { useActivityLogs } from '@/hooks/useActivityLogs';
 import { useTasks } from '@/hooks/useTasks';
 import { useCertificates } from '@/hooks/useCertificates';
+import { useSettings } from '@/hooks/useSettings';
 import { queryDocs, updateDocument, where, orderBy } from '@/lib/firestore';
 import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue, Certificate } from '@/types';
 import { Bell, Mail, Info, LogIn, Award, MessageSquare, CheckSquare, User, FileText, Users, CheckCircle, BarChart2, MapPin, Settings, Database, Activity, Send, Calendar, Search } from 'lucide-react';
@@ -1782,7 +1783,7 @@ export function UserManagement() {
 /* ===== Admin: System Notifications ===== */
 export function SystemNotificationsPage() {
   const { profile } = useAuthStore();
-  const { notifications, broadcastNotification } = useNotifications(profile?.uid);
+  const { notifications, broadcastNotification, deleteNotification } = useNotifications(profile?.uid);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [audience, setAudience] = useState('broadcast');
@@ -1843,14 +1844,33 @@ export function SystemNotificationsPage() {
             <div className="p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">No announcements sent yet</p></div>
           ) : (
             broadcastHistory.map((n, i) => (
-              <div key={n.id || i} className="p-3.5 border-b-[1.5px] border-black border-opacity-10 last:border-0 hover:bg-yellow-50">
-                <div className="flex justify-between items-start mb-1">
-                  <span className="font-black uppercase text-[10px] italic">{n.title}</span>
-                  <span className="text-[7.5px] font-black opacity-30 italic">
+              <div key={n.id || i} className="p-3.5 border-b-[1.5px] border-black border-opacity-10 last:border-0 hover:bg-yellow-50 relative group flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                <div className="flex-1">
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="font-black uppercase text-[10px] italic">{n.title}</span>
+                    <span className="text-[7.5px] font-black opacity-30 italic sm:hidden">
+                      {n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : 'just now'}
+                    </span>
+                  </div>
+                  <p className="text-[9px] font-bold opacity-60 leading-tight">{n.message}</p>
+                </div>
+                <div className="flex items-center gap-3 justify-between sm:justify-end">
+                  <span className="text-[7.5px] font-black opacity-30 italic hidden sm:block">
                     {n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : 'just now'}
                   </span>
+                  {n.id && typeof deleteNotification === 'function' && (
+                    <button 
+                      onClick={() => {
+                        if (confirm('Are you sure you want to delete this broadcast for everyone?')) {
+                          deleteNotification(n.id);
+                        }
+                      }} 
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[8px] font-black uppercase text-red-600 hover:text-red-800 bg-red-100 hover:bg-red-200 border border-red-300 px-2 py-1 rounded cursor-pointer self-end sm:self-auto"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
-                <p className="text-[9px] font-bold opacity-60 leading-tight">{n.message}</p>
               </div>
             ))
           )}
@@ -1865,6 +1885,9 @@ export function SystemSettingsPage() {
   const { events, fetchAllEvents } = useEvents();
   const [userCount, setUserCount] = useState(0);
   const [regCount, setRegCount] = useState(0);
+  const { settings, saveSettings, loading: settingsLoading } = useSettings();
+  const [saving, setSaving] = useState(false);
+  const [localSettings, setLocalSettings] = useState<any>(null);
 
   useEffect(() => {
     fetchAllEvents();
@@ -1872,9 +1895,79 @@ export function SystemSettingsPage() {
     queryDocs<{ id: string }>('registrations', []).then(r => setRegCount(r.length));
   }, [fetchAllEvents]);
 
+  useEffect(() => {
+    if (settings) {
+      setLocalSettings(settings);
+    }
+  }, [settings]);
+
+  const handleSave = async () => {
+    if (!localSettings) return;
+    setSaving(true);
+    try {
+      await saveSettings(localSettings);
+      alert('Settings saved successfully!');
+    } catch (err: any) {
+      alert('Failed to save settings: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">System Settings</h2>
+
+      {/* Configuration Settings */}
+      <BrutalCard className="p-6 space-y-5 border-b-[6px]">
+        <h3 className="font-black uppercase text-sm italic">Global Configuration</h3>
+        {settingsLoading || !localSettings ? (
+          <p className="text-[10px] font-bold opacity-50">Loading configuration...</p>
+        ) : (
+          <div className="space-y-5 max-w-md">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-black text-sm uppercase">Registration Open</p>
+                <p className="text-[9px] font-bold opacity-50">Allow new student registrations platform-wide</p>
+              </div>
+              <input type="checkbox" checked={localSettings.registrationOpen || false} onChange={e => setLocalSettings({...localSettings, registrationOpen: e.target.checked})} className="w-5 h-5 accent-yellow-400 border-[2px] border-black outline-none cursor-pointer" />
+            </div>
+            
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-black text-sm uppercase">Require Event Approval</p>
+                <p className="text-[9px] font-bold opacity-50">Admin review required for organizer events</p>
+              </div>
+              <input type="checkbox" checked={localSettings.requireEventApproval || false} onChange={e => setLocalSettings({...localSettings, requireEventApproval: e.target.checked})} className="w-5 h-5 accent-yellow-400 border-[2px] border-black outline-none cursor-pointer" />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-black text-sm uppercase">Maintenance Mode</p>
+                <p className="text-[9px] font-bold opacity-50">Restrict platform access during updates</p>
+              </div>
+              <input type="checkbox" checked={localSettings.maintenanceMode || false} onChange={e => setLocalSettings({...localSettings, maintenanceMode: e.target.checked})} className="w-5 h-5 accent-red-500 border-[2px] border-black outline-none cursor-pointer" />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-black text-sm uppercase">Anonymous Feedback</p>
+                <p className="text-[9px] font-bold opacity-50">Allow students to submit feedback without names</p>
+              </div>
+              <input type="checkbox" checked={localSettings.allowAnonymousFeedback || false} onChange={e => setLocalSettings({...localSettings, allowAnonymousFeedback: e.target.checked})} className="w-5 h-5 accent-yellow-400 border-[2px] border-black outline-none cursor-pointer" />
+            </div>
+
+            <div className="space-y-1.5 pt-2">
+              <label className="font-black uppercase text-[10px] tracking-widest opacity-80 italic">Support Contact Email</label>
+              <BrutalInput type="email" placeholder="support@campusevent.edu" value={localSettings.supportEmail || ''} onChange={e => setLocalSettings({...localSettings, supportEmail: e.target.value})} />
+            </div>
+
+            <BrutalButton color={COLORS.teal} className="w-full mt-4 py-3" onClick={handleSave} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Configuration'}
+            </BrutalButton>
+          </div>
+        )}
+      </BrutalCard>
 
       {/* Collection Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1891,28 +1984,30 @@ export function SystemSettingsPage() {
         ))}
       </div>
 
-      <BrutalCard className="p-6 space-y-4 border-b-[6px]">
-        <h3 className="font-black uppercase text-sm italic">Event Categories</h3>
-        <div className="flex flex-wrap gap-2">
-          {['Technical', 'Cultural', 'Sports', 'Academic', 'Workshop', 'Seminar', 'Competition', 'Social'].map((cat) => (
-            <div key={cat} className="flex items-center gap-2 border-[2px] border-black px-3 py-1.5 rounded-xl bg-white">
-              <span className="font-black uppercase text-[9px]">{cat}</span>
-              <span className="text-[8px] font-bold opacity-30">{events.filter(e => e.category === cat.toLowerCase()).length}</span>
-            </div>
-          ))}
-        </div>
-      </BrutalCard>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <BrutalCard className="p-6 space-y-4 border-b-[6px]">
+          <h3 className="font-black uppercase text-sm italic">Event Categories</h3>
+          <div className="flex flex-wrap gap-2">
+            {['Technical', 'Cultural', 'Sports', 'Academic', 'Workshop', 'Seminar', 'Competition', 'Social'].map((cat) => (
+              <div key={cat} className="flex items-center gap-2 border-[2px] border-black px-3 py-1.5 rounded-xl bg-white">
+                <span className="font-black uppercase text-[9px]">{cat}</span>
+                <span className="text-[8px] font-bold opacity-30">{events.filter(e => e.category === cat.toLowerCase()).length}</span>
+              </div>
+            ))}
+          </div>
+        </BrutalCard>
 
-      <BrutalCard className="p-6 space-y-4 border-b-[6px]">
-        <h3 className="font-black uppercase text-sm italic">User Roles Distribution</h3>
-        <div className="flex gap-3">
-          {['student', 'organizer', 'admin'].map(role => (
-            <div key={role} className="border-[2px] border-black px-4 py-2 rounded-xl bg-white text-center">
-              <span className="text-[8px] font-black uppercase opacity-40 block">{role}</span>
-            </div>
-          ))}
-        </div>
-      </BrutalCard>
+        <BrutalCard className="p-6 space-y-4 border-b-[6px]">
+          <h3 className="font-black uppercase text-sm italic">User Roles Distribution</h3>
+          <div className="flex gap-3 flex-wrap">
+            {['student', 'organizer', 'admin'].map(role => (
+              <div key={role} className="border-[2px] border-black px-4 py-2 rounded-xl bg-white text-center">
+                <span className="text-[10px] font-black uppercase tracking-wider">{role}</span>
+              </div>
+            ))}
+          </div>
+        </BrutalCard>
+      </div>
     </div>
   );
 }
@@ -2062,16 +2157,59 @@ export function DataManagementPage() {
 
 /* ===== Admin: Activity Logs ===== */
 export function ActivityLogsPage() {
-  const { logs, fetchLogs } = useActivityLogs();
+  const { logs, fetchLogs, loading } = useActivityLogs();
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
 
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+  useEffect(() => { fetchLogs(100); }, [fetchLogs]);
+
+  const filteredLogs = logs.filter(log => {
+    const s = search.toLowerCase();
+    const matchSearch = (log.actorName || '').toLowerCase().includes(s) || (log.action || '').toLowerCase().includes(s);
+    const matchRole = roleFilter === 'all' || log.role === roleFilter;
+    return matchSearch && matchRole;
+  });
+
+  const getActionColor = (action: string) => {
+    const act = action.toLowerCase();
+    if (act.includes('create') || act.includes('approve') || act.includes('register') || act.includes('present')) return 'text-green-600';
+    if (act.includes('delete') || act.includes('reject') || act.includes('cancel') || act.includes('failed')) return 'text-red-600';
+    return 'text-yellow-600';
+  };
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-lavender underline-offset-4">Activity Logs</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-lavender underline-offset-4">Activity Logs</h2>
+        
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
+            className="border-[2.5px] border-black rounded-xl px-3 py-2 text-[10px] font-black bg-white shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] outline-none cursor-pointer uppercase italic">
+            <option value="all">All Roles</option>
+            <option value="admin">Admin</option>
+            <option value="organizer">Organizer</option>
+            <option value="student">Student</option>
+            <option value="system">System</option>
+          </select>
+
+          <div className="relative flex-1 sm:w-64">
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+              <Search className="w-4 h-4 opacity-40" />
+            </div>
+            <input
+              type="text"
+              placeholder="Search actor or action..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full border-[2.5px] border-black py-2 pl-9 pr-3 text-[10px] font-bold rounded-xl shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] outline-none focus:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all"
+            />
+          </div>
+        </div>
+      </div>
+      
       <BrutalCard className="p-0 border-[2.5px] overflow-hidden">
-        <table className="w-full text-left font-bold">
-          <thead>
+        <table className="w-full text-left font-bold block sm:table">
+          <thead className="hidden sm:table-header-group">
             <tr className="border-b-[2.5px] border-black text-[8px] uppercase opacity-40 italic tracking-widest bg-slate-50">
               <th className="p-3">Timestamp</th>
               <th className="p-3">Actor</th>
@@ -2079,16 +2217,26 @@ export function ActivityLogsPage() {
               <th className="p-3">Entity</th>
             </tr>
           </thead>
-          <tbody className="text-[10px]">
-            {logs.length === 0 ? (
-              <tr><td colSpan={4} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No activity logged yet</td></tr>
+          <tbody className="text-[10px] block sm:table-row-group">
+            {filteredLogs.length === 0 ? (
+              <tr className="block sm:table-row"><td colSpan={4} className="p-6 text-center text-[10px] font-black uppercase italic opacity-30 block sm:table-cell">{loading ? 'Loading Logs...' : 'No activity logs found'}</td></tr>
             ) : (
-              logs.map((log) => (
-                <tr key={log.id} className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50">
-                  <td className="p-3 font-bold opacity-50">{log.createdAt?.toDate ? log.createdAt.toDate().toLocaleString() : ''}</td>
-                  <td className="p-3"><Badge text={log.role || 'system'} color={log.role === 'admin' ? COLORS.lavender : log.role === 'organizer' ? COLORS.teal : COLORS.yellow} /></td>
-                  <td className="p-3 font-black uppercase">{log.action}</td>
-                  <td className="p-3">{log.entityType}</td>
+              filteredLogs.map((log) => (
+                <tr key={log.id} className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50 block sm:table-row p-3 sm:p-0">
+                  <td className="sm:p-3 font-bold opacity-50 block sm:table-cell text-[8px] sm:text-[10px] mb-1 sm:mb-0">
+                    {log.createdAt?.toDate ? log.createdAt.toDate().toLocaleString() : ''}
+                  </td>
+                  <td className="sm:p-3 block sm:table-cell mb-1 sm:mb-0">
+                    <div className="flex items-center gap-2">
+                      <div className="font-black uppercase truncate max-w-[150px]" title={log.actorName}>{log.actorName}</div>
+                      <Badge text={log.role || 'system'} color={log.role === 'admin' ? COLORS.lavender : log.role === 'organizer' ? COLORS.teal : COLORS.yellow} />
+                    </div>
+                  </td>
+                  <td className={`sm:p-3 font-black uppercase block sm:table-cell mb-1 sm:mb-0 ${getActionColor(log.action)}`}>{log.action}</td>
+                  <td className="sm:p-3 block sm:table-cell">
+                    <span className="bg-slate-200 border-[1px] border-black px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase mr-1">{log.entityType}</span>
+                    <span className="opacity-60 text-[8px] truncate inline-block max-w-[120px] align-bottom" title={log.entityId}>{log.entityId}</span>
+                  </td>
                 </tr>
               ))
             )}

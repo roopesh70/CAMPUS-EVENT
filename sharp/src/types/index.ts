@@ -189,3 +189,14 @@ export interface ActivityLog {
   entityType: EntityType;
   createdAt: Timestamp;
 }
+
+/* ===== System Settings ===== */
+export interface SystemSettings {
+  id?: string;
+  registrationOpen: boolean;
+  requireEventApproval: boolean;
+  maintenanceMode: boolean;
+  supportEmail: string;
+  allowAnonymousFeedback: boolean;
+  updatedAt?: Timestamp;
+}

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { LayoutDashboard, Users, ShieldCheck, AlertCircle, Check, X } from 'lucide-react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
+import { BrutalInput } from '@/components/ui/BrutalInput';
 import { Badge } from '@/components/ui/Badge';
 import { COLORS } from '@/lib/constants';
 import { useEvents } from '@/hooks/useEvents';
@@ -157,6 +158,7 @@ export function AdminApprovals() {
   const { createNotification } = useNotifications(profile?.uid);
   const [tab, setTab] = useState<'pending' | 'history'>('pending');
   const [comments, setComments] = useState<Record<string, string>>({});
+  const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
 
   useEffect(() => {
     if (tab === 'pending') fetchEventsByStatus('pending');
@@ -211,22 +213,11 @@ export function AdminApprovals() {
                 {evt.approvalComment && tab === 'history' && (
                   <p className="text-[9px] font-bold opacity-50 italic bg-yellow-50 border-[1.5px] border-yellow-400 rounded-lg px-2 py-1 mt-1">💬 {evt.approvalComment}</p>
                 )}
+                {/* View Details Button replaced inline approve/reject inputs for pending Tab */}
+                <BrutalButton color="white" className="mt-2 text-[9px] px-4 py-1.5" onClick={() => setSelectedEvent(evt)}>
+                  {tab === 'pending' ? 'Review & take Action' : 'View full details'}
+                </BrutalButton>
               </div>
-              {tab === 'pending' && (
-                <div className="flex flex-col gap-2 w-full sm:w-auto">
-                  <input
-                    type="text"
-                    placeholder="Add comment..."
-                    value={comments[evt.id] || ''}
-                    onChange={e => setComments(prev => ({ ...prev, [evt.id]: e.target.value }))}
-                    className="border-[2px] border-black px-3 py-1.5 text-[9px] font-bold rounded-xl w-full outline-none"
-                  />
-                  <div className="flex gap-2">
-                    <BrutalButton color="#4ADE80" className="flex-1 px-4 py-2" onClick={() => handleApprove(evt)}>Approve</BrutalButton>
-                    <BrutalButton color="#F87171" className="flex-1 px-4 py-2" onClick={() => handleReject(evt)}>Reject</BrutalButton>
-                  </div>
-                </div>
-              )}
               {tab === 'history' && (
                 <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.red} />
               )}
@@ -234,6 +225,129 @@ export function AdminApprovals() {
           ))
         )}
       </div>
+
+      {/* Admin Event Details Modal */}
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]" onClick={() => setSelectedEvent(null)}>
+          <div className="bg-[#FFFBEB] border-[3px] border-black rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-[slideUp_0.3s_ease-out] flex flex-col" onClick={e => e.stopPropagation()}>
+            
+            {/* Header */}
+            <div className="border-b-[2.5px] border-black p-5 flex justify-between items-start bg-slate-50 sticky top-0 z-10 shrink-0">
+              <div>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <Badge text={selectedEvent.category} color={COLORS.teal} />
+                  <Badge text={selectedEvent.status} color={selectedEvent.status === 'approved' ? COLORS.green : selectedEvent.status === 'pending' ? COLORS.pink : COLORS.yellow} />
+                  <Badge text={selectedEvent.department || 'General'} color={COLORS.lavender} />
+                </div>
+                <h3 className="text-xl font-black uppercase italic">{selectedEvent.title}</h3>
+                <p className="text-[10px] font-bold opacity-50 italic">Submitted by {selectedEvent.organizerName}</p>
+              </div>
+              <button onClick={() => setSelectedEvent(null)} className="w-8 h-8 shrink-0 border-[2px] border-black rounded-lg bg-white flex items-center justify-center hover:bg-red-100 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="p-5 space-y-6 overflow-y-auto">
+              
+              {/* Poster */}
+              {selectedEvent.posterUrl && (
+                <div className="rounded-xl border-[2.5px] border-black overflow-hidden bg-black flex justify-center max-h-48">
+                  <img src={selectedEvent.posterUrl} alt="Event Poster" className="object-contain h-full w-auto" />
+                </div>
+              )}
+
+              {/* Description */}
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Description</h4>
+                <p className="text-[11px] font-bold leading-relaxed">{selectedEvent.description || 'No description provided.'}</p>
+              </div>
+
+              {/* Core Details Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="bg-white border-[2px] border-black rounded-xl p-3">
+                  <span className="text-[7px] font-black uppercase opacity-40 block">Date & Time</span>
+                  <span className="text-[10px] font-black block">{selectedEvent.startTime?.toDate?.().toLocaleDateString() || 'N/A'}</span>
+                  <span className="text-[8px] font-bold opacity-60 block">{selectedEvent.startTime?.toDate?.().toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' }) || ''}</span>
+                </div>
+                <div className="bg-white border-[2px] border-black rounded-xl p-3">
+                  <span className="text-[7px] font-black uppercase opacity-40 block">Venue</span>
+                  <span className="text-[10px] font-black block truncate">{selectedEvent.venueName || 'TBD'}</span>
+                </div>
+                <div className="bg-white border-[2px] border-black rounded-xl p-3">
+                  <span className="text-[7px] font-black uppercase opacity-40 block">Capacity</span>
+                  <span className="text-[10px] font-black block">{selectedEvent.capacity} attendees</span>
+                </div>
+                <div className="bg-white border-[2px] border-black rounded-xl p-3">
+                  <span className="text-[7px] font-black uppercase opacity-40 block">Organizer Email</span>
+                  <span className="text-[9px] font-black block truncate">{selectedEvent.contactEmail || 'N/A'}</span>
+                </div>
+                <div className="bg-white border-[2px] border-black rounded-xl p-3">
+                  <span className="text-[7px] font-black uppercase opacity-40 block">Organizer Phone</span>
+                  <span className="text-[9px] font-black block truncate">{selectedEvent.contactPhone || 'N/A'}</span>
+                </div>
+                <div className="bg-white border-[2px] border-black rounded-xl p-3">
+                  <span className="text-[7px] font-black uppercase opacity-40 block">Budget Request</span>
+                  <span className="text-[9px] font-black block truncate">{selectedEvent.budget || 'None specified'}</span>
+                </div>
+              </div>
+
+              {/* Advanced Targeting Details */}
+              <div className="bg-slate-100 border-[2px] border-black rounded-xl p-4 space-y-3">
+                <h4 className="text-[10px] font-black uppercase tracking-widest opacity-60">Planning & Targeting</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-6 text-[9px] font-bold">
+                  <div><span className="opacity-40 uppercase block text-[7px]">Target Audience</span>{selectedEvent.targetAudience || 'General'}</div>
+                  <div><span className="opacity-40 uppercase block text-[7px]">Expected Attendance</span>{selectedEvent.expectedAttendance || selectedEvent.capacity || 'Not set'}</div>
+                  <div><span className="opacity-40 uppercase block text-[7px]">Co-Organizers</span>{selectedEvent.coOrganizers || 'None'}</div>
+                  <div><span className="opacity-40 uppercase block text-[7px]">Registration Deadline</span>{selectedEvent.registrationDeadline?.toDate?.().toLocaleDateString() || 'N/A'}</div>
+                </div>
+              </div>
+
+              {/* Resources */}
+              {selectedEvent.resources && selectedEvent.resources.length > 0 && (
+                <div>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-2">Required Resources</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedEvent.resources.map((r, i) => <Badge key={i} text={r} color="white" />)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer / Actions - Only show action buttons if status is pending */}
+            <div className="p-5 border-t-[2.5px] border-black bg-white sticky bottom-0 z-10 shrink-0">
+              {selectedEvent.status === 'pending' ? (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <BrutalInput 
+                    type="text"
+                    placeholder="Add approval comment / reason..."
+                    value={comments[selectedEvent.id] || ''}
+                    onChange={e => setComments(prev => ({ ...prev, [selectedEvent.id]: e.target.value }))}
+                    className="flex-1 text-[10px]"
+                  />
+                  <div className="flex gap-2 shrink-0">
+                    <BrutalButton color="#4ADE80" className="px-5 py-2 text-xs" onClick={() => { handleApprove(selectedEvent); setSelectedEvent(null); }}>
+                      <Check className="w-4 h-4 mr-1" /> Approve
+                    </BrutalButton>
+                    <BrutalButton color="#F87171" className="px-5 py-2 text-xs" onClick={() => { handleReject(selectedEvent); setSelectedEvent(null); }}>
+                      <X className="w-4 h-4 mr-1" /> Reject
+                    </BrutalButton>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center text-[10px] font-black">
+                  <span className="opacity-50 uppercase italic">Current Status: {selectedEvent.status}</span>
+                  {selectedEvent.approvalComment && (
+                    <span className="opacity-80">💬 {selectedEvent.approvalComment}</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
