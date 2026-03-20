@@ -25,6 +25,7 @@ import {
   TasksPage, EventUpdatesPage, OrganizerAnalytics, AdminAnalytics,
   VenueManagement, UserManagement, SystemNotificationsPage,
   SystemSettingsPage, DataManagementPage, ActivityLogsPage,
+  AdminCertificateTemplates,
 } from '@/components/views/AllViews';
 import { AuthPageView } from '@/components/views/AuthPageView';
 
@@ -75,6 +76,7 @@ function AdminView({ tab }: { tab: string }) {
   if (tab === 'analytics') return <AdminAnalytics />;
   if (tab === 'notifications') return <NotificationsPage />;
   if (tab === 'system-notifications') return <SystemNotificationsPage />;
+  if (tab === 'cert-templates') return <AdminCertificateTemplates />;
   if (tab === 'settings') return <SystemSettingsPage />;
   if (tab === 'data') return <DataManagementPage />;
   if (tab === 'logs') return <ActivityLogsPage />;

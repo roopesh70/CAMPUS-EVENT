@@ -61,6 +61,7 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
     { id: 'analytics', label: 'Analytics & Reports', icon: BarChart2 },
     { id: 'system-notifications', label: 'System Notifications', icon: Send },
     { id: 'settings', label: 'System Settings', icon: Settings },
+    { id: 'cert-templates', label: 'Certificate Templates', icon: Award },
     { id: 'data', label: 'Data Management', icon: Database },
     { id: 'logs', label: 'Activity Logs', icon: Activity },
   ],

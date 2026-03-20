@@ -8,6 +8,7 @@ import {
   getDocs,
   getDoc,
   addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -58,6 +59,18 @@ export async function addDocument(
   return addDoc(collection(db, collectionPath), {
     ...data,
     createdAt: serverTimestamp(),
+  });
+}
+
+// Set doc (create or overwrite with specific ID)
+export async function setDocument(
+  collectionPath: string,
+  docId: string,
+  data: DocumentData
+) {
+  return setDoc(doc(db, collectionPath, docId), {
+    ...data,
+    updatedAt: serverTimestamp(),
   });
 }
 

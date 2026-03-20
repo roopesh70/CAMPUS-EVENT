@@ -96,7 +96,7 @@ export function ExploreEvents() {
     setRegLoading(evt.id);
     const result = await registerForEvent(
       evt.id, evt.title, profile.uid,
-      profile.name || '', profile.department || '',
+      profile.name || '', profile.department || '', profile.year || null,
       evt.capacity, Math.max(evt.registeredCount || 0, 0)
     );
     setRegLoading(null);

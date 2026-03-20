@@ -100,6 +100,7 @@ export interface Registration {
   userId: string;
   userName: string;
   userDepartment: string;
+  userYear: number | null;
   registrationTime: Timestamp;
   status: RegistrationStatus;
   attendanceStatus: AttendanceStatus;
@@ -110,6 +111,30 @@ export interface Registration {
 /* ===== Certificates ===== */
 export type CertificateType = 'participation' | 'volunteer' | 'winner' | 'organizer';
 
+export interface CertificateTemplate {
+  id: string;
+  name: string;
+  eventType: string; // EventCategory or 'all'
+  layout: 'standard' | 'modern' | 'classic' | 'minimal' | 'elegant' | 'bold';
+  primaryColor: string;
+  secondaryColor: string;
+  textColor?: string; // Global text color
+  borderStyle: 'solid' | 'double' | 'dashed' | 'none';
+  logoUrl?: string; // Legacy single logo
+  logoUrls?: string[]; // Multiple overlapping/placed logos
+  backgroundImageUrl?: string; // Full bleed background image
+  signatureImageUrl?: string; // Organizer signature image
+  signatureText?: string; // Typed signature name/title
+  headerText: string;
+  bodyTemplate: string; // Supports variables like {{participantName}}
+  footerText: string;
+  isActive: boolean;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type CertificateStatus = 'issued' | 'revoked' | 'replacement_requested';
+
 export interface Certificate {
   id: string;
   eventId: string;
@@ -118,8 +143,23 @@ export interface Certificate {
   userName: string;
   type: CertificateType;
   issueDate: Timestamp;
-  certificateUrl: string;
+  certificateUrl: string; // Pre-rendered image URL, if stored (we use dynamic canvas, so this might be empty)
   verificationCode: string;
+  
+  // New properties for v2 (Template-driven)
+  // New properties for v2 (Template-driven)
+  templateId?: string;
+  logoUrl?: string; // Legacy custom override
+  logoUrls?: string[]; // Multiple logo overrides
+  backgroundImageUrl?: string; // Background override
+  textColor?: string; // Text color override
+  signatureImageUrl?: string; // Custom override
+  signatureText?: string; // Custom override
+  
+  status?: CertificateStatus; // Track if it's been revoked or user asked for a reprint
+  emailSent?: boolean; // Whether the PDF attachment was emailed
+  department?: string; // Stored department for rendering
+  year?: number | null; // Stored academic year for rendering
 }
 
 /* ===== Notifications ===== */

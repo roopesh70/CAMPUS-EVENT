@@ -17,10 +17,11 @@ import { useTasks } from '@/hooks/useTasks';
 import { useCertificates } from '@/hooks/useCertificates';
 import { useSettings } from '@/hooks/useSettings';
 import { useCloudinary } from '@/hooks/useCloudinary';
-import { queryDocs, updateDocument, where, orderBy } from '@/lib/firestore';
-import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue, Certificate } from '@/types';
+import { updateDocument, deleteDocument, queryDocs, addDocument, where, orderBy } from '@/lib/firestore';
+import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue, Certificate, CertificateTemplate } from '@/types';
 import { Timestamp } from 'firebase/firestore';
-import { Bell, Mail, Info, LogIn, Award, MessageSquare, CheckSquare, User, FileText, Users, CheckCircle, BarChart2, MapPin, Settings, Database, Activity, Send, Calendar, Search } from 'lucide-react';
+import { Bell, Mail, Info, LogIn, Award, MessageSquare, CheckSquare, User, FileText, Users, CheckCircle, BarChart2, MapPin, Settings, Database, Activity, Send, Calendar, Search, PlusCircle, Edit, Trash2 } from 'lucide-react';
+import { renderCertificateDataUrl } from '@/lib/certificateRenderer';
 
 /* ===== Public: Announcements ===== */
 export function AnnouncementsPage() {
@@ -198,77 +199,204 @@ export function MyRegistrations() {
   );
 }
 
-/* ===== Student: Certificates ===== */
+/* ===== Certificates: Organizer & Student ===== */
 export function CertificatesPage() {
   const { profile, role } = useAuthStore();
-  const { certificates, loading, fetchUserCertificates, generateCertificate } = useCertificates();
+  const { certificates, templates, loading, fetchUserCertificates, fetchEventCertificates, fetchTemplates, bulkGenerate, requestReplacement, revokeCertificate } = useCertificates();
   const { events, fetchOrganizerEvents } = useEvents();
   const { registrations, fetchEventParticipants } = useRegistrations();
+  
+  // Organizer state
   const [selectedEvent, setSelectedEvent] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [genDone, setGenDone] = useState(false);
+  const [genResult, setGenResult] = useState<{ generated: number; skipped: number } | null>(null);
   const [fixing, setFixing] = useState(false);
+  
+  // Customizations
+  const { uploadImage } = useCloudinary();
+  const [logoFiles, setLogoFiles] = useState<File[]>([]);
+  const [bgFile, setBgFile] = useState<File | null>(null);
+  const [sigFile, setSigFile] = useState<File | null>(null);
+  const [sigText, setSigText] = useState('');
+  
+  // Preview
+  const [previewUrl, setPreviewUrl] = useState('');
+
+  // Notifications
+  const { createNotification } = useNotifications(profile?.uid);
 
   useEffect(() => {
     if (profile?.uid) {
-      fetchUserCertificates(profile.uid);
-      if (role === 'organizer') fetchOrganizerEvents(profile.uid);
+      if (role === 'student' || role === 'public') {
+        fetchUserCertificates(profile.uid);
+      } else if (role === 'organizer') {
+        fetchOrganizerEvents(profile.uid);
+        fetchTemplates();
+      } else {
+        fetchTemplates(); // Admins might want to see them
+      }
     }
-  }, [profile?.uid, role, fetchUserCertificates, fetchOrganizerEvents]);
+  }, [profile?.uid, role, fetchUserCertificates, fetchOrganizerEvents, fetchTemplates]);
 
   useEffect(() => {
-    if (selectedEvent) fetchEventParticipants(selectedEvent);
-  }, [selectedEvent, fetchEventParticipants]);
+    if (selectedEvent) {
+      fetchEventParticipants(selectedEvent);
+      fetchEventCertificates(selectedEvent);
+    }
+  }, [selectedEvent, fetchEventParticipants, fetchEventCertificates]);
 
-  const downloadCert = (cert: Certificate) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1200; canvas.height = 850;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    // Background
-    ctx.fillStyle = '#FFFBEB'; ctx.fillRect(0, 0, 1200, 850);
-    // Border
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 6; ctx.strokeRect(30, 30, 1140, 790);
-    ctx.strokeStyle = '#FACC15'; ctx.lineWidth = 3; ctx.strokeRect(45, 45, 1110, 760);
-    // Title
-    ctx.fillStyle = '#000'; ctx.font = 'bold 48px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('CERTIFICATE OF', 600, 150);
-    ctx.font = 'bold italic 56px monospace';
-    ctx.fillText(cert.type.toUpperCase(), 600, 220);
-    // Line
-    ctx.fillStyle = '#FACC15'; ctx.fillRect(350, 250, 500, 4);
-    // Body
-    ctx.fillStyle = '#000'; ctx.font = '22px monospace'; ctx.fillText('This is to certify that', 600, 320);
-    ctx.font = 'bold 40px monospace'; ctx.fillText(cert.userName, 600, 390);
-    ctx.font = '22px monospace'; ctx.fillText('has successfully participated in', 600, 450);
-    ctx.font = 'bold 32px monospace'; ctx.fillText(cert.eventTitle, 600, 520);
-    // Date & Code
-    ctx.font = '18px monospace'; ctx.fillStyle = '#666';
-    const dateStr = cert.issueDate?.toDate ? cert.issueDate.toDate().toLocaleDateString() : new Date().toLocaleDateString();
-    ctx.fillText(`Date: ${dateStr}`, 600, 620);
-    ctx.fillText(`Verification: ${cert.verificationCode}`, 600, 660);
-    // Logo
-    ctx.fillStyle = '#000'; ctx.font = 'bold 28px monospace'; ctx.fillText('SHARP — Campus Events', 600, 750);
+  // Live preview for Organizer
+  useEffect(() => {
+    if (role === 'organizer' && selectedTemplate) {
+      const template = templates.find(t => t.id === selectedTemplate);
+      const evt = events.find(e => e.id === selectedEvent);
+      if (!template) return;
 
-    const link = document.createElement('a');
-    link.download = `certificate_${cert.verificationCode}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+      const renderPreview = async () => {
+        try {
+          const mockCert: Partial<Certificate> = {
+            userName: 'Participant Name',
+            eventTitle: evt?.title || 'Selected Event',
+            type: 'participation',
+            verificationCode: 'SAMPLE-1234'
+          };
+          
+          let logoUrlsToUse = undefined;
+          if (logoFiles.length > 0) {
+             logoUrlsToUse = logoFiles.map(f => URL.createObjectURL(f));
+          }
+          
+          let bgToUse = undefined;
+          if (bgFile) bgToUse = URL.createObjectURL(bgFile);
+          
+          let sigToUse = undefined;
+          if (sigFile) sigToUse = URL.createObjectURL(sigFile);
+
+          const url = await renderCertificateDataUrl(mockCert, template, {
+            logoUrls: logoUrlsToUse,
+            backgroundImageUrl: bgToUse,
+            signatureImageUrl: sigToUse,
+            signatureText: sigText || template.signatureText
+          });
+          setPreviewUrl(url);
+        } catch (e) {
+          console.error("Preview render failed:", e);
+        }
+      };
+      
+      const timer = setTimeout(renderPreview, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedTemplate, selectedEvent, logoFiles, bgFile, sigFile, sigText, templates, events, role]);
+
+  const downloadCert = async (cert: Certificate) => {
+    // Determine template (fallback to classic hardcoded generation if old data)
+    let template = templates.find(t => t.id === cert.templateId);
+    
+    if (!template && cert.templateId) {
+       // if not in current state, fetch it
+       const fetchedData = await fetchTemplates();
+       template = fetchedData.find(t => t.id === cert.templateId);
+    }
+
+    if (template) {
+      // Use new generator
+      const { downloadCertificate } = await import('@/lib/certificateRenderer');
+      await downloadCertificate(cert, template, {
+        logoUrl: cert.logoUrl,
+        signatureImageUrl: cert.signatureImageUrl,
+        signatureText: cert.signatureText
+      });
+    } else {
+      // Fallback for v1 certificates
+      const canvas = document.createElement('canvas');
+      canvas.width = 1200; canvas.height = 850;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.fillStyle = '#FFFBEB'; ctx.fillRect(0, 0, 1200, 850);
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 6; ctx.strokeRect(30, 30, 1140, 790);
+      ctx.strokeStyle = '#FACC15'; ctx.lineWidth = 3; ctx.strokeRect(45, 45, 1110, 760);
+      ctx.fillStyle = '#000'; ctx.font = 'bold 48px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('CERTIFICATE OF', 600, 150);
+      ctx.font = 'bold italic 56px monospace';
+      ctx.fillText(cert.type.toUpperCase(), 600, 220);
+      ctx.fillStyle = '#FACC15'; ctx.fillRect(350, 250, 500, 4);
+      ctx.fillStyle = '#000'; ctx.font = '22px monospace'; ctx.fillText('This is to certify that', 600, 320);
+      ctx.font = 'bold 40px monospace'; ctx.fillText(cert.userName, 600, 390);
+      ctx.font = '22px monospace'; ctx.fillText('has successfully participated in', 600, 450);
+      ctx.font = 'bold 32px monospace'; ctx.fillText(cert.eventTitle, 600, 520);
+      ctx.font = '18px monospace'; ctx.fillStyle = '#666';
+      const dateStr = cert.issueDate?.toDate ? cert.issueDate.toDate().toLocaleDateString() : new Date().toLocaleDateString();
+      ctx.fillText(`Date: ${dateStr}`, 600, 620);
+      ctx.fillText(`Verification: ${cert.verificationCode}`, 600, 660);
+      ctx.fillStyle = '#000'; ctx.font = 'bold 28px monospace'; ctx.fillText('SHARP — Campus Events', 600, 750);
+      const link = document.createElement('a');
+      link.download = `certificate_${cert.verificationCode}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
   };
 
   const handleBulkGenerate = async () => {
-    if (!selectedEvent) return;
+    if (!selectedEvent || !selectedTemplate) return;
     const evt = events.find(e => e.id === selectedEvent);
     if (!evt) return;
+    
     setGenerating(true);
-    const present = registrations.filter(r => r.attendanceStatus === 'present');
-    for (const r of present) {
-      await generateCertificate(evt.id, evt.title, r.userId, r.userName, 'participation');
+    setGenResult(null);
+
+    let finalLogoUrls: string[] | undefined = undefined;
+    let finalBg: string | undefined = undefined;
+    let finalSig: string | undefined = undefined;
+
+    try {
+      if (logoFiles.length > 0) {
+        finalLogoUrls = [];
+        for (const file of logoFiles) {
+          const url = await uploadImage(file);
+          if (url) finalLogoUrls.push(url);
+        }
+      }
+      if (bgFile) finalBg = await uploadImage(bgFile);
+      if (sigFile) finalSig = await uploadImage(sigFile);
+    } catch (e) {
+      console.error("Upload failed", e);
+      alert("Failed to upload custom graphics.");
+      setGenerating(false);
+      return;
     }
+
+    const present = registrations.filter(r => r.attendanceStatus === 'present');
+    const parts = present.map(r => ({ 
+      userId: r.userId, 
+      userName: r.userName, 
+      department: r.userDepartment, 
+      year: r.userYear 
+    }));
+
+    const res = await bulkGenerate(
+      evt.id,
+      evt.title,
+      parts,
+      'participation',
+      selectedTemplate,
+      { logoUrls: finalLogoUrls?.length ? finalLogoUrls : undefined, backgroundImageUrl: finalBg, signatureImageUrl: finalSig, signatureText: sigText }
+    );
+    
+    // Auto-distribute: Send notification to all users who got a newly generated certificate
+    if (res.generated > 0) {
+      const generatedUsers = present.slice(0, res.generated); // Simplification: assume first N were generated
+      for (const u of generatedUsers) {
+         await createNotification(u.userId, 'Certificate Ready', `Your participation certificate for ${evt.title} is ready to download!`, 'certificate', evt.id);
+      }
+    }
+
     setGenerating(false);
-    setGenDone(true);
-    setTimeout(() => setGenDone(false), 4000);
-    if (profile?.uid) fetchUserCertificates(profile.uid);
+    setGenResult(res);
+    setTimeout(() => setGenResult(null), 8000);
+    
+    fetchEventCertificates(evt.id);
   };
 
   const handleFixAttendance = async () => {
@@ -280,58 +408,178 @@ export function CertificatesPage() {
     setFixing(false);
   };
 
+  const handleRequestReplacement = async (certId: string) => {
+    if (confirm("Request a custom reprint/replacement for this certificate? The organizer will be notified.")) {
+      await requestReplacement(certId);
+      if (profile?.uid) fetchUserCertificates(profile.uid);
+    }
+  };
+
+  const handleRevoke = async (certId: string) => {
+    if (confirm("Revoke & discard this certificate? The student's current version will instantly become invalid, allowing you to generate a new copy with updated details.")) {
+      await revokeCertificate(certId);
+      if (selectedEvent) fetchEventCertificates(selectedEvent);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">Certificates</h2>
 
       {/* Organizer: Generate Certificates */}
       {role === 'organizer' && (
-        <BrutalCard color={COLORS.yellow} className="p-5 border-b-[5px] space-y-3">
-          <h3 className="font-black uppercase text-sm italic">Generate Certificates</h3>
-          <p className="text-[8px] font-bold opacity-50">Select an event to generate participation certificates for all attendees marked as present.</p>
-          <select value={selectedEvent} onChange={e => setSelectedEvent(e.target.value)}
-            className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
-            <option value="">Choose event...</option>
-            {events.filter(e => e.status === 'approved' || e.status === 'completed').map(e => <option key={e.id} value={e.id}>{e.title} ({e.attendanceCount || 0} attended)</option>)}
-          </select>
-          {selectedEvent && (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-[9px] font-black uppercase opacity-50">{registrations.filter(r => r.attendanceStatus === 'present').length} eligible attendees</span>
-                <BrutalButton color={COLORS.teal} className="text-[9px] px-4" onClick={handleBulkGenerate} disabled={generating || registrations.filter(r => r.attendanceStatus === 'present').length === 0}>
-                  {generating ? 'Generating...' : genDone ? '✓ Generated!' : 'Generate All'}
+        <BrutalCard color={COLORS.yellow} className="p-5 border-b-[5px] space-y-4">
+          <h3 className="font-black uppercase text-sm italic">Issue Certificates</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] opacity-50">1. Select Event</label>
+              <select value={selectedEvent} onChange={e => setSelectedEvent(e.target.value)}
+                className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+                <option value="">Choose event...</option>
+                {events.filter(e => e.status === 'approved' || e.status === 'completed').map(e => <option key={e.id} value={e.id}>{e.title} ({e.attendanceCount || 0} attended)</option>)}
+              </select>
+            </div>
+            
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] opacity-50">2. Select Template</label>
+              <select value={selectedTemplate} onChange={e => setSelectedTemplate(e.target.value)} disabled={!selectedEvent}
+                className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic disabled:opacity-50">
+                <option value="">Choose template...</option>
+                {templates.filter(t => t.isActive).map(t => <option key={t.id} value={t.id}>{t.name} ({t.eventType})</option>)}
+              </select>
+            </div>
+          </div>
+
+          {selectedEvent && selectedTemplate && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4 border-t-[2.5px] border-black border-opacity-20">
+              
+              {/* Customizations */}
+              <div className="space-y-3 lg:col-span-1">
+                <h4 className="font-black uppercase text-[10px] italic">3. Customizations (Optional)</h4>
+                
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[8px] opacity-70">Override Logos (Select one or more)</label>
+                  <input type="file" multiple accept="image/*" onChange={e => {
+                    const newFiles = e.target.files ? Array.from(e.target.files) : [];
+                    setLogoFiles(prev => [...prev, ...newFiles]);
+                    e.target.value = ''; // Reset input to allow re-selecting same file
+                  }} className="w-full text-[9px] font-bold bg-white border-[2px] border-black p-1 rounded-lg" />
+                  {logoFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {logoFiles.map((f, i) => (
+                        <span key={i} className="text-[7px] font-bold bg-yellow-200 border border-black px-1.5 py-0.5 rounded flex items-center gap-1 group">
+                          {f.name}
+                          <button onClick={() => setLogoFiles(prev => prev.filter((_, idx) => idx !== i))} className="hover:text-red-500 font-black">×</button>
+                        </span>
+                      ))}
+                      <button onClick={() => setLogoFiles([])} className="text-[7px] font-black uppercase underline ml-1 opacity-40 hover:opacity-100 transition-opacity">Clear All</button>
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[8px] opacity-70">Override Background</label>
+                  <input type="file" accept="image/*" onChange={e => setBgFile(e.target.files?.[0] || null)} className="w-full text-[9px] font-bold bg-white border-[2px] border-black p-1 rounded-lg" />
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="font-black uppercase text-[8px] opacity-50">Override Signature Image</label>
+                  <input type="file" accept="image/*" onChange={e => setSigFile(e.target.files?.[0] || null)} className="w-full text-[9px] font-bold bg-white border-[2px] border-black p-1 rounded-lg" />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-black uppercase text-[8px] opacity-50">Override Signature Name</label>
+                  <BrutalInput value={sigText} onChange={e => setSigText(e.target.value)} placeholder="e.g. Dr. John Smith" className="text-xs py-1.5" />
+                </div>
+
+                <div className="pt-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-black uppercase tracking-tight">{registrations.filter(r => r.attendanceStatus === 'present').length} eligible attendees</span>
+                  </div>
+                  <p className="text-[7px] font-bold text-red-600 mt-1 uppercase italic">* Duplicate prevention is active. Only new unique attendees will receive certificates.</p>
+                </div>
+
+                <BrutalButton color={COLORS.teal} className="w-full py-3 mt-2" onClick={handleBulkGenerate} disabled={generating || registrations.filter(r => r.attendanceStatus === 'present').length === 0}>
+                  {generating ? 'Generating & Distributing...' : 'Generate & Send All'}
+                </BrutalButton>
+
+                {genResult && (
+                  <div className={`p-3 border-[2.5px] border-black rounded-xl font-black text-[9px] uppercase shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] ${genResult.generated > 0 ? 'bg-green-300' : 'bg-yellow-100'}`}>
+                    <CheckCircle className="w-4 h-4 mb-1 inline-block mr-1" />
+                    Issued: {genResult.generated} <br/>
+                    Skipped (Duplicates): {genResult.skipped}
+                  </div>
+                )}
+                
+                <BrutalButton color="white" className="w-full text-[8px] py-1 border-[2px]" onClick={handleFixAttendance} disabled={fixing}>
+                  {fixing ? 'Syncing...' : 'Sync Attendance Count'}
                 </BrutalButton>
               </div>
-              <BrutalButton color="white" className="text-[9px] px-4 py-2 border-[2px]" onClick={handleFixAttendance} disabled={fixing}>
-                {fixing ? 'Syncing...' : 'Sync Attendance Count'}
-              </BrutalButton>
+
+              {/* Live Preview */}
+              <div className="lg:col-span-2 space-y-2">
+                <h4 className="font-black uppercase text-[10px] italic">Preview</h4>
+                {previewUrl ? (
+                  <img src={previewUrl} alt="Preview" className="w-full border-[4px] border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] rounded-xl bg-white" />
+                ) : (
+                  <div className="w-full aspect-[1.41] border-[4px] border-black border-dashed flex items-center justify-center bg-white opacity-50 rounded-xl">
+                    <span className="font-black italic uppercase text-xs">Loading Preview...</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </BrutalCard>
       )}
 
-      {/* Certificate List */}
+      {/* Certificate List (Issued) */}
       {loading ? (
         <BrutalCard className="p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">Loading certificates...</p></BrutalCard>
       ) : certificates.length === 0 ? (
         <BrutalCard className="p-8 text-center space-y-3">
           <Award className="w-12 h-12 mx-auto opacity-20" />
-          <p className="text-[11px] font-black uppercase italic opacity-40">No certificates earned yet</p>
-          <p className="text-[9px] font-bold opacity-30">Attend events and get your attendance verified to earn certificates</p>
+          <p className="text-[11px] font-black uppercase italic opacity-40">No certificates found</p>
+          <p className="text-[9px] font-bold opacity-30">Attend events to earn certificates.</p>
         </BrutalCard>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {certificates.map((cert) => (
-            <BrutalCard key={cert.id} className="p-5 border-b-[5px] space-y-2">
+            <BrutalCard key={cert.id} className="p-5 border-b-[5px] space-y-2 flex flex-col">
               <div className="flex justify-between items-start">
                 <Badge text={cert.type} color={cert.type === 'participation' ? COLORS.teal : cert.type === 'winner' ? COLORS.yellow : COLORS.pink} />
-                <span className="text-[7px] font-black uppercase opacity-30">{cert.issueDate?.toDate ? cert.issueDate.toDate().toLocaleDateString() : ''}</span>
+                <span className="text-[7.5px] font-black uppercase opacity-30">{cert.issueDate?.toDate ? cert.issueDate.toDate().toLocaleDateString() : ''}</span>
               </div>
-              <h4 className="font-black uppercase text-[12px] italic">{cert.eventTitle}</h4>
-              <p className="text-[8px] font-bold opacity-40">ID: {cert.verificationCode}</p>
-              <BrutalButton color={COLORS.yellow} className="w-full text-[9px] py-2" onClick={() => downloadCert(cert)}>
-                <FileText className="w-3.5 h-3.5" /> Download Certificate
-              </BrutalButton>
+              <h4 className="font-black uppercase text-[12px] italic leading-tight flex-1">{cert.eventTitle}</h4>
+              
+              {role === 'organizer' && (
+                <p className="text-[10px] font-bold mt-1">
+                  Owner: <span className="font-black uppercase">{cert.userName}</span>
+                </p>
+              )}
+              
+              <p className="text-[8px] font-bold opacity-40 font-mono tracking-tighter">ID: {cert.verificationCode}</p>
+              
+              {cert.status === 'replacement_requested' && (
+                <div className="bg-red-100 border-[2px] border-red-500 text-red-700 text-[8px] p-2 font-bold uppercase rounded-lg">
+                  Replacement Requested
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 mt-auto pt-3">
+                <BrutalButton color={COLORS.yellow} className="text-[9px] py-1.5 col-span-2" onClick={() => downloadCert(cert)}>
+                  <FileText className="w-3.5 h-3.5" /> Download
+                </BrutalButton>
+                {role === 'student' && cert.status !== 'replacement_requested' && (
+                  <BrutalButton color="white" className="text-[8px] py-1 col-span-2 border-[2px]" onClick={() => handleRequestReplacement(cert.id)}>
+                    Request Reprint
+                  </BrutalButton>
+                )}
+                {role === 'organizer' && cert.status === 'replacement_requested' && (
+                  <BrutalButton color={COLORS.red} className="text-[8px] py-1 col-span-2 opacity-90" onClick={() => handleRevoke(cert.id)}>
+                    <Trash2 className="w-3 h-3" /> Revoke & Discard Request
+                  </BrutalButton>
+                )}
+              </div>
             </BrutalCard>
           ))}
         </div>
@@ -2517,6 +2765,333 @@ export function ActivityLogsPage() {
           </tbody>
         </table>
       </BrutalCard>
+    </div>
+  );
+}
+
+/* ===== Admin: Certificate Templates ===== */
+export function AdminCertificateTemplates() {
+  const { templates, fetchTemplates, addTemplate, updateTemplate, deleteTemplate } = useCertificates();
+  const { uploadImage } = useCloudinary();
+  const [editingTemplate, setEditingTemplate] = useState<CertificateTemplate | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  
+  // Form State
+  const [formData, setFormData] = useState<Partial<CertificateTemplate>>({});
+  const [logoFiles, setLogoFiles] = useState<File[]>([]);
+  const [bgFile, setBgFile] = useState<File | null>(null);
+  const [sigFile, setSigFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  // Generate preview whenever form data changes
+  useEffect(() => {
+    if (editingTemplate || isNew) {
+      const renderPreview = async () => {
+        try {
+          // Minimal mock data for preview
+          const mockCert: Partial<Certificate> = {
+            userName: 'Jane Doe',
+            eventTitle: 'Annual Tech Symposium 2026',
+            type: 'participation',
+            verificationCode: 'SAMPLE-XYZ123'
+          };
+          
+          let logoUrlsToUse = formData.logoUrls && formData.logoUrls.length > 0 ? formData.logoUrls : (formData.logoUrl ? [formData.logoUrl] : undefined);
+          if (logoFiles.length > 0) {
+             logoUrlsToUse = logoFiles.map(f => URL.createObjectURL(f));
+          }
+          
+          let bgToUse = formData.backgroundImageUrl;
+          if (bgFile) bgToUse = URL.createObjectURL(bgFile);
+          
+          let sigToUse = formData.signatureImageUrl;
+          if (sigFile) sigToUse = URL.createObjectURL(sigFile);
+
+          const url = await renderCertificateDataUrl(mockCert, formData as CertificateTemplate, {
+            logoUrls: logoUrlsToUse,
+            backgroundImageUrl: bgToUse,
+            signatureImageUrl: sigToUse,
+            primaryColor: formData.primaryColor,
+            textColor: formData.textColor,
+            department: 'Computer Science'
+          });
+          setPreviewUrl(url);
+        } catch (e) {
+          console.error("Preview render failed:", e);
+        }
+      };
+      
+      // Debounce slightly
+      const timer = setTimeout(renderPreview, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [formData, logoFiles, bgFile, sigFile, editingTemplate, isNew]);
+
+  const openNew = () => {
+    setIsNew(true);
+    setEditingTemplate(null);
+    setFormData({
+      name: 'New Template',
+      eventType: 'all',
+      layout: 'modern',
+      primaryColor: '#FACC15',
+      secondaryColor: '#FFFBEB',
+      textColor: '#000000',
+      borderStyle: 'solid',
+      headerText: 'CERTIFICATE OF {{certificationType}}',
+      bodyTemplate: 'This is to certify that\n\n{{participantName}}\n\nhas successfully participated in\n\n{{eventTitle}}',
+      footerText: 'ID: {{id}} | Date: {{date}}',
+      signatureText: 'Authorized Signature',
+      isActive: true,
+    });
+    setLogoFiles([]);
+    setBgFile(null);
+    setSigFile(null);
+  };
+
+  const openEdit = (t: CertificateTemplate) => {
+    setIsNew(false);
+    setEditingTemplate(t);
+    setFormData({ ...t });
+    setLogoFiles([]);
+    setBgFile(null);
+    setSigFile(null);
+  };
+
+  const saveTemplate = async () => {
+    setSaving(true);
+    try {
+      let finalLogoUrls = formData.logoUrls && formData.logoUrls.length > 0 ? formData.logoUrls : (formData.logoUrl ? [formData.logoUrl] : undefined);
+      if (logoFiles.length > 0) {
+        finalLogoUrls = [];
+        for (const file of logoFiles) {
+          const uploadedUrl = await uploadImage(file);
+          if (uploadedUrl) finalLogoUrls.push(uploadedUrl);
+        }
+      }
+      
+      let finalBg = formData.backgroundImageUrl;
+      if (bgFile) finalBg = await uploadImage(bgFile);
+      
+      let finalSig = formData.signatureImageUrl;
+      if (sigFile) finalSig = await uploadImage(sigFile);
+
+      const rawPayload = {
+        ...formData,
+        logoUrls: finalLogoUrls?.length ? finalLogoUrls : undefined,
+        backgroundImageUrl: finalBg,
+        signatureImageUrl: finalSig,
+      };
+      // Delete legacy key to prefer array going forward
+      delete rawPayload.logoUrl;
+
+      // Strip undefined values which crash Firestore
+      const payload = Object.fromEntries(
+        Object.entries(rawPayload).filter(([_, v]) => v !== undefined)
+      ) as any;
+
+      if (isNew) {
+        await addTemplate(payload);
+      } else if (editingTemplate) {
+        await updateTemplate(editingTemplate.id, payload);
+      }
+      
+      await fetchTemplates();
+      setEditingTemplate(null);
+      setIsNew(false);
+    } catch (e) {
+      alert('Failed to save template. Check console.');
+      console.error(e);
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = async (t: CertificateTemplate) => {
+    if (confirm(`Delete template '${t.name}'?`)) {
+      await deleteTemplate(t.id);
+      fetchTemplates();
+    }
+  };
+
+  if (editingTemplate || isNew) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-black uppercase italic underline decoration-[4px] decoration-lavender">{isNew ? 'Create Template' : 'Edit Template'}</h2>
+          <BrutalButton color="white" onClick={() => { setEditingTemplate(null); setIsNew(false); }}>Cancel</BrutalButton>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Editor Form */}
+          <BrutalCard className="p-6 space-y-4 max-h-[70vh] overflow-y-auto border-b-[6px]">
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Template Name</label>
+              <BrutalInput value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] opacity-40 italic">Layout Style</label>
+                <select value={formData.layout || 'modern'} onChange={e => setFormData({ ...formData, layout: e.target.value as any })} className="w-full border-[2.5px] border-black p-2 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+                  <option value="modern">Modern</option>
+                  <option value="classic">Classic Serif</option>
+                  <option value="standard">Standard</option>
+                  <option value="minimal">Minimal</option>
+                  <option value="elegant">Elegant Serif</option>
+                  <option value="bold">Bold & Impactful</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] opacity-40 italic">Event Category</label>
+                <select value={formData.eventType || 'all'} onChange={e => setFormData({ ...formData, eventType: e.target.value })} className="w-full border-[2.5px] border-black p-2 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+                  <option value="all">Any Event Type (Default)</option>
+                  <option value="technical">Technical</option>
+                  <option value="cultural">Cultural</option>
+                  <option value="sports">Sports</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] opacity-40 italic">Primary Color</label>
+                <input type="color" value={formData.primaryColor || '#FACC15'} onChange={e => setFormData({ ...formData, primaryColor: e.target.value })} className="w-full h-10 border-[2.5px] border-black cursor-pointer rounded-lg" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] opacity-40 italic">Bg Color</label>
+                <input type="color" value={formData.secondaryColor || '#FFFBEB'} onChange={e => setFormData({ ...formData, secondaryColor: e.target.value })} className="w-full h-10 border-[2.5px] border-black cursor-pointer rounded-lg" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] opacity-40 italic">Text Color</label>
+                <input type="color" value={formData.textColor || '#000000'} onChange={e => setFormData({ ...formData, textColor: e.target.value })} className="w-full h-10 border-[2.5px] border-black cursor-pointer rounded-lg" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] opacity-40 italic">Border Style</label>
+                <select value={formData.borderStyle || 'solid'} onChange={e => setFormData({ ...formData, borderStyle: e.target.value as any })} className="w-full border-[2.5px] border-black p-2 font-bold text-[10px] bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-lg outline-none italic">
+                  <option value="solid">Solid</option>
+                  <option value="double">Double</option>
+                  <option value="dashed">Dashed</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Institution/Event Logos (Select one or more)</label>
+              <input type="file" multiple accept="image/*" onChange={e => {
+                const newFiles = e.target.files ? Array.from(e.target.files) : [];
+                setLogoFiles(prev => [...prev, ...newFiles]);
+                e.target.value = ''; // Reset input to allow re-selecting same file
+              }} className="w-full text-[10px] font-bold border-[2px] border-black p-1 rounded-lg bg-white" />
+              {logoFiles.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {logoFiles.map((f, i) => (
+                    <span key={i} className="text-[7px] font-bold bg-yellow-100 border border-black px-1.5 py-0.5 rounded flex items-center gap-1 group">
+                      {f.name}
+                      <button onClick={() => setLogoFiles(prev => prev.filter((_, idx) => idx !== i))} className="hover:text-red-500 font-black">×</button>
+                    </span>
+                  ))}
+                  <button onClick={() => setLogoFiles([])} className="text-[7px] font-black uppercase underline ml-1 opacity-40 hover:opacity-100 transition-opacity">Clear All</button>
+                </div>
+              )}
+              {(formData.logoUrls?.length || formData.logoUrl) && logoFiles.length === 0 && <p className="text-[8px] text-green-600 font-bold">Current logos saved.</p>}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Full Background Image</label>
+              <input type="file" accept="image/*" onChange={e => setBgFile(e.target.files?.[0] || null)} className="w-full text-xs font-bold" />
+              {formData.backgroundImageUrl && !bgFile && <p className="text-[8px] text-green-600 font-bold">Current background saved.</p>}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Header Text (supports {'{{certificationType}}'})</label>
+              <BrutalInput value={formData.headerText || ''} onChange={e => setFormData({ ...formData, headerText: e.target.value })} />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Body Content (supports {'{{participantName}}, {{eventTitle}}, {{department}}, {{year}}, {{currentYear}}'})</label>
+              <textarea value={formData.bodyTemplate || ''} onChange={e => setFormData({ ...formData, bodyTemplate: e.target.value })} className="w-full border-[2.5px] border-black p-3 font-bold text-xs h-32 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none" placeholder="e.g. This is to certify that {{participantName}} of {{department}} ({{year}}) has participated in {{eventTitle}} during {{currentYear}}." />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Signature Image (transparent PNG)</label>
+              <input type="file" accept="image/*" onChange={e => setSigFile(e.target.files?.[0] || null)} className="w-full text-xs font-bold" />
+            </div>
+            
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Signature Title / Name</label>
+              <BrutalInput value={formData.signatureText || ''} onChange={e => setFormData({ ...formData, signatureText: e.target.value })} />
+            </div>
+
+            <div className="flex items-center gap-3 py-2 border-t-[2.5px] border-black">
+              <input type="checkbox" checked={formData.isActive !== false} onChange={e => setFormData({ ...formData, isActive: e.target.checked })} className="w-5 h-5 accent-yellow-400 border-black" />
+              <label className="font-black uppercase text-xs italic">Template is Active (Available to Organizers)</label>
+            </div>
+
+            <BrutalButton color={COLORS.yellow} className="w-full h-12 text-sm" onClick={saveTemplate} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Template'}
+            </BrutalButton>
+          </BrutalCard>
+
+          {/* Live Preview Panel */}
+          <div className="space-y-3">
+            <h3 className="font-black uppercase text-[10px] opacity-40 italic tracking-widest">Live Preview</h3>
+            {previewUrl ? (
+              <img src={previewUrl} alt="Preview" className="w-full border-[4px] border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] rounded-xl" />
+            ) : (
+              <div className="w-full aspect-[1.41] border-[4px] border-black border-dashed flex items-center justify-center bg-slate-50 opacity-50 rounded-xl">
+                <span className="font-black italic uppercase text-xs">Generating Preview...</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-lavender underline-offset-4">Certificate Templates</h2>
+        <BrutalButton color={COLORS.teal} className="px-4 py-2" onClick={openNew}>
+          <PlusCircle className="w-4 h-4" /> Create Template
+        </BrutalButton>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {templates.map(t => (
+          <BrutalCard key={t.id} className={`p-5 flex flex-col justify-between h-48 border-b-[5px] ${!t.isActive ? 'opacity-60' : ''}`} color={t.isActive ? 'white' : '#f1f5f9'}>
+            <div>
+              <div className="flex justify-between items-start mb-2">
+                <Badge text={t.eventType} color={COLORS.yellow} />
+                {!t.isActive && <Badge text="Inactive" color={COLORS.red} />}
+              </div>
+              <h3 className="font-black uppercase text-sm italic">{t.name}</h3>
+              <p className="text-[9px] font-bold opacity-50 uppercase mt-1">Layout: {t.layout}</p>
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <BrutalButton color={COLORS.lavender} className="flex-1 text-[9px] py-1.5" onClick={() => openEdit(t)}>
+                <Edit className="w-3.5 h-3.5" /> Edit
+              </BrutalButton>
+              <BrutalButton color={COLORS.red} className="px-3" onClick={() => handleDelete(t)}>
+                <Trash2 className="w-3.5 h-3.5" />
+              </BrutalButton>
+            </div>
+          </BrutalCard>
+        ))}
+        {templates.length === 0 && (
+          <div className="col-span-full border-[4px] border-black border-dashed p-10 text-center rounded-2xl opacity-40">
+            <Award className="w-10 h-10 mx-auto mb-2" />
+            <h3 className="font-black italic uppercase text-lg">No Templates Found</h3>
+            <p className="font-bold text-xs uppercase">Create a template to issue certificates.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

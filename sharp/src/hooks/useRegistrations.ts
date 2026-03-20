@@ -19,6 +19,7 @@ export function useRegistrations() {
     userId: string,
     userName: string,
     userDepartment: string,
+    userYear: number | null,
     capacity: number,
     registeredCount: number
   ) => {
@@ -60,6 +61,7 @@ export function useRegistrations() {
       userId,
       userName,
       userDepartment,
+      userYear,
       status,
       attendanceStatus: 'pending',
       feedbackSubmitted: false,

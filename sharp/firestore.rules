@@ -44,10 +44,15 @@ service cloud.firestore {
       allow delete: if isAuthenticated();
     }
 
-    // CERTIFICATES
+    // CERTIFICATES & TEMPLATES
     match /certificates/{certId} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
+    }
+    
+    match /certificateTemplates/{templateId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // NOTIFICATIONS
