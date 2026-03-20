@@ -459,7 +459,7 @@ export function CertificatesPage() {
                 <h4 className="font-black uppercase text-[10px] italic">3. Customizations (Optional)</h4>
                 
                 <div className="space-y-1.5">
-                  <label className="font-black uppercase text-[8px] opacity-70">Override Logos (Select one or more)</label>
+                  <label className="font-black uppercase text-[8px] opacity-70">Override Logos (Select one or more) • Max 5MB</label>
                   <input type="file" multiple accept="image/*" onChange={e => {
                     const newFiles = e.target.files ? Array.from(e.target.files) : [];
                     setLogoFiles(prev => [...prev, ...newFiles]);
@@ -478,12 +478,12 @@ export function CertificatesPage() {
                   )}
                 </div>
                 <div className="space-y-1.5">
-                  <label className="font-black uppercase text-[8px] opacity-70">Override Background</label>
+                  <label className="font-black uppercase text-[8px] opacity-70">Override Background • Max 5MB</label>
                   <input type="file" accept="image/*" onChange={e => setBgFile(e.target.files?.[0] || null)} className="w-full text-[9px] font-bold bg-white border-[2px] border-black p-1 rounded-lg" />
                 </div>
                 
                 <div className="space-y-1">
-                  <label className="font-black uppercase text-[8px] opacity-50">Override Signature Image</label>
+                  <label className="font-black uppercase text-[8px] opacity-50">Override Signature Image • Max 5MB</label>
                   <input type="file" accept="image/*" onChange={e => setSigFile(e.target.files?.[0] || null)} className="w-full text-[9px] font-bold bg-white border-[2px] border-black p-1 rounded-lg" />
                 </div>
 
@@ -853,7 +853,7 @@ export function ProfilePage() {
               )}
             </div>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
-            <p className="text-[7px] font-black uppercase opacity-30 text-center mt-1">Click to change</p>
+            <p className="text-[7px] font-black uppercase opacity-30 text-center mt-1">Click to change • Max 5MB</p>
           </div>
           <div className="flex-1 space-y-4 w-full">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1190,6 +1190,7 @@ export function OrganizerMyEvents() {
                     <div className="space-y-2 py-4">
                       <div className="w-8 h-8 border-[2px] border-black rounded-lg bg-yellow-400 mx-auto flex items-center justify-center text-sm">📷</div>
                       <p className="text-[10px] font-black uppercase italic">Drop poster here or click to browse</p>
+                      <p className="text-[8px] font-bold opacity-30">Max file size: 10MB</p>
                     </div>
                   )}
                 </div>
@@ -2982,7 +2983,7 @@ export function AdminCertificateTemplates() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-black uppercase text-[9px] opacity-40 italic">Institution/Event Logos (Select one or more)</label>
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Institution/Event Logos (Select one or more) • Max 5MB</label>
               <input type="file" multiple accept="image/*" onChange={e => {
                 const newFiles = e.target.files ? Array.from(e.target.files) : [];
                 setLogoFiles(prev => [...prev, ...newFiles]);
@@ -3003,7 +3004,7 @@ export function AdminCertificateTemplates() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-black uppercase text-[9px] opacity-40 italic">Full Background Image</label>
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Full Background Image • Max 5MB</label>
               <input type="file" accept="image/*" onChange={e => setBgFile(e.target.files?.[0] || null)} className="w-full text-xs font-bold" />
               {formData.backgroundImageUrl && !bgFile && <p className="text-[8px] text-green-600 font-bold">Current background saved.</p>}
             </div>
@@ -3019,7 +3020,7 @@ export function AdminCertificateTemplates() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-black uppercase text-[9px] opacity-40 italic">Signature Image (transparent PNG)</label>
+              <label className="font-black uppercase text-[9px] opacity-40 italic">Signature Image (transparent PNG) • Max 5MB</label>
               <input type="file" accept="image/*" onChange={e => setSigFile(e.target.files?.[0] || null)} className="w-full text-xs font-bold" />
             </div>
             
@@ -3077,6 +3078,9 @@ export function AdminCertificateTemplates() {
             <div className="flex gap-2 justify-end mt-4">
               <BrutalButton color={COLORS.lavender} className="flex-1 text-[9px] py-1.5" onClick={() => openEdit(t)}>
                 <Edit className="w-3.5 h-3.5" /> Edit
+              </BrutalButton>
+              <BrutalButton color="white" className="flex-1 text-[9px] py-1.5" onClick={() => updateTemplate(t.id, { isActive: !t.isActive }).then(() => fetchTemplates())}>
+                {t.isActive ? 'Disable' : 'Enable'}
               </BrutalButton>
               <BrutalButton color={COLORS.red} className="px-3" onClick={() => handleDelete(t)}>
                 <Trash2 className="w-3.5 h-3.5" />

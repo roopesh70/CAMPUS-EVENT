@@ -396,7 +396,7 @@ export function CreateEventFlow() {
                   <div className="space-y-2">
                     <div className="w-12 h-12 border-[2px] border-black rounded-xl bg-yellow-400 mx-auto flex items-center justify-center text-xl">📷</div>
                     <p className="text-[10px] font-black uppercase italic">Drop poster here or click to browse</p>
-                    <p className="text-[8px] font-bold opacity-30">JPG, PNG, WebP — max 10MB</p>
+                    <p className="text-[8px] font-bold opacity-30">JPG, PNG, WebP — Max file size: 10MB</p>
                   </div>
                 )}
               </div>
