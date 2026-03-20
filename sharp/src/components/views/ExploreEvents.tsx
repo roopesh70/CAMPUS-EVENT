@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Search, X, MapPin, Clock, Users, ArrowUpDown, Share2, TrendingUp, Timer } from 'lucide-react';
+import { Search, X, MapPin, Clock, Users, ArrowUpDown, Share2, TrendingUp, Timer, Mail, Phone } from 'lucide-react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { BrutalInput } from '@/components/ui/BrutalInput';
@@ -339,22 +339,74 @@ export function ExploreEvents() {
               {/* Description */}
               <div>
                 <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">About this event</h4>
-                <p className="text-[11px] font-bold leading-relaxed opacity-70">{selectedEvent.description || 'No description provided.'}</p>
+                <p className="text-[11px] font-bold leading-relaxed opacity-70 whitespace-pre-wrap">{selectedEvent.description || 'No description provided.'}</p>
               </div>
 
-              {/* Department */}
-              {selectedEvent.department && (
+              {/* Target Audience */}
+              {selectedEvent.targetAudience && (
                 <div>
-                  <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Department</h4>
-                  <Badge text={selectedEvent.department} color={COLORS.lavender} />
+                  <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Target Audience</h4>
+                  <p className="text-[11px] font-bold leading-relaxed opacity-70">{selectedEvent.targetAudience}</p>
                 </div>
               )}
+
+              {/* Co-Organizers */}
+              {selectedEvent.coOrganizers && (
+                <div>
+                  <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Co-Organizers</h4>
+                  <p className="text-[11px] font-bold leading-relaxed opacity-70">{selectedEvent.coOrganizers}</p>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-6">
+                {/* Department */}
+                {selectedEvent.department && (
+                  <div>
+                    <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Department</h4>
+                    <Badge text={selectedEvent.department} color={COLORS.lavender} />
+                  </div>
+                )}
+
+                {/* Eligibility */}
+                {(selectedEvent.eligibility?.departments?.length > 0 || selectedEvent.eligibility?.years?.length > 0) && (
+                  <div>
+                    <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Eligibility</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedEvent.eligibility?.departments?.map((dep, i) => (
+                        <Badge key={`dep-${i}`} text={dep} color={COLORS.lavender} />
+                      ))}
+                      {selectedEvent.eligibility?.years?.map((year, i) => (
+                        <Badge key={`year-${i}`} text={`Year ${year}`} color={COLORS.pink} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Resources */}
               {selectedEvent.resources && selectedEvent.resources.length > 0 && (
                 <div>
                   <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Resources</h4>
-                  <div className="flex flex-wrap gap-1.5">{selectedEvent.resources.map((r, i) => <Badge key={i} text={r} color="white" />)}</div>
+                  <div className="flex flex-wrap gap-1.5">{selectedEvent.resources.map((r, i) => <Badge key={`res-${i}`} text={r} color="white" />)}</div>
+                </div>
+              )}
+
+              {/* Contact Info */}
+              {(selectedEvent.contactEmail || selectedEvent.contactPhone) && (
+                <div className="bg-white border-[2px] border-black rounded-xl p-3">
+                  <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-2">Contact / Support</h4>
+                  <div className="flex flex-col gap-1.5 text-[10px] font-black">
+                    {selectedEvent.contactEmail && (
+                      <a href={`mailto:${selectedEvent.contactEmail}`} className="flex items-center gap-2 hover:underline decoration-2 underline-offset-2 w-fit">
+                        <span className="w-5 h-5 bg-teal-100 rounded flex items-center justify-center border-[1.5px] border-black"><Mail className="w-2.5 h-2.5" /></span> {selectedEvent.contactEmail}
+                      </a>
+                    )}
+                    {selectedEvent.contactPhone && (
+                      <a href={`tel:${selectedEvent.contactPhone}`} className="flex items-center gap-2 hover:underline decoration-2 underline-offset-2 w-fit">
+                        <span className="w-5 h-5 bg-yellow-100 rounded flex items-center justify-center border-[1.5px] border-black"><Phone className="w-2.5 h-2.5" /></span> {selectedEvent.contactPhone}
+                      </a>
+                    )}
+                  </div>
                 </div>
               )}
 

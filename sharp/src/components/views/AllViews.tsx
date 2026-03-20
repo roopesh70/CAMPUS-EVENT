@@ -179,7 +179,7 @@ export function MyRegistrations() {
                 {reg.attendanceStatus && reg.attendanceStatus !== 'pending' && (
                   <Badge text={reg.attendanceStatus} color={reg.attendanceStatus === 'present' ? COLORS.green : '#e5e7eb'} />
                 )}
-                {reg.status === 'confirmed' && (
+                {reg.status === 'confirmed' && reg.attendanceStatus !== 'present' && (
                   <BrutalButton
                     color={COLORS.red}
                     className="px-3 py-1 text-[8px]"
@@ -207,6 +207,7 @@ export function CertificatesPage() {
   const [selectedEvent, setSelectedEvent] = useState('');
   const [generating, setGenerating] = useState(false);
   const [genDone, setGenDone] = useState(false);
+  const [fixing, setFixing] = useState(false);
 
   useEffect(() => {
     if (profile?.uid) {
@@ -270,6 +271,15 @@ export function CertificatesPage() {
     if (profile?.uid) fetchUserCertificates(profile.uid);
   };
 
+  const handleFixAttendance = async () => {
+    if (!selectedEvent) return;
+    setFixing(true);
+    const presentCount = registrations.filter(r => r.attendanceStatus === 'present').length;
+    await updateDocument('events', selectedEvent, { attendanceCount: presentCount });
+    if (profile?.uid) fetchOrganizerEvents(profile.uid);
+    setFixing(false);
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">Certificates</h2>
@@ -285,10 +295,15 @@ export function CertificatesPage() {
             {events.filter(e => e.status === 'approved' || e.status === 'completed').map(e => <option key={e.id} value={e.id}>{e.title} ({e.attendanceCount || 0} attended)</option>)}
           </select>
           {selectedEvent && (
-            <div className="flex items-center gap-3">
-              <span className="text-[9px] font-black uppercase opacity-50">{registrations.filter(r => r.attendanceStatus === 'present').length} eligible attendees</span>
-              <BrutalButton color={COLORS.teal} className="text-[9px] px-4" onClick={handleBulkGenerate} disabled={generating || registrations.filter(r => r.attendanceStatus === 'present').length === 0}>
-                {generating ? 'Generating...' : genDone ? '✓ Generated!' : 'Generate All'}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-[9px] font-black uppercase opacity-50">{registrations.filter(r => r.attendanceStatus === 'present').length} eligible attendees</span>
+                <BrutalButton color={COLORS.teal} className="text-[9px] px-4" onClick={handleBulkGenerate} disabled={generating || registrations.filter(r => r.attendanceStatus === 'present').length === 0}>
+                  {generating ? 'Generating...' : genDone ? '✓ Generated!' : 'Generate All'}
+                </BrutalButton>
+              </div>
+              <BrutalButton color="white" className="text-[9px] px-4 py-2 border-[2px]" onClick={handleFixAttendance} disabled={fixing}>
+                {fixing ? 'Syncing...' : 'Sync Attendance Count'}
               </BrutalButton>
             </div>
           )}

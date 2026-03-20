@@ -77,7 +77,6 @@ export function useEvents() {
       registeredCount: 0,
       attendanceCount: 0,
       conflictFlag: false,
-      posterUrl: '',
       updatedAt: serverTimestamp(),
     });
 

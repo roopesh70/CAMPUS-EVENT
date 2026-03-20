@@ -94,6 +94,10 @@ export function useRegistrations() {
       console.warn('[cancelRegistration] Already cancelled:', regId);
       return { error: 'Already cancelled' };
     }
+    if (reg.attendanceStatus === 'present') {
+      console.warn('[cancelRegistration] Cannot cancel an attended registration:', regId);
+      return { error: 'Cannot cancel. You have already attended this event.' };
+    }
     // ─────────────────────────────────────────────────────────────────
 
     const wasConfirmed = reg.status === 'confirmed';
@@ -153,10 +157,23 @@ export function useRegistrations() {
     eventId: string,
     status: AttendanceStatus
   ) => {
+    // Get previous status to adjust attendance count properly
+    const regSnap = await getDoc(doc(db, 'registrations', regId));
+    if (!regSnap.exists()) return;
+    const prevStatus = regSnap.data().attendanceStatus;
+
     await updateDocument('registrations', regId, { attendanceStatus: status });
-    if (status === 'present') {
+    
+    // Increment only if newly marked present
+    if (status === 'present' && prevStatus !== 'present') {
       await updateDoc(doc(db, 'events', eventId), {
         attendanceCount: increment(1),
+      });
+    } 
+    // Decrement if changing from present to something else
+    else if (status !== 'present' && prevStatus === 'present') {
+      await updateDoc(doc(db, 'events', eventId), {
+        attendanceCount: increment(-1),
       });
     }
   }, []);
