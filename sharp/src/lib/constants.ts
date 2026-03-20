@@ -44,11 +44,13 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
   organizer: [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'my-events', label: 'My Events', icon: FileText },
+    { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'create', label: 'Create Event', icon: PlusCircle },
     { id: 'participants', label: 'Participants', icon: Users },
     { id: 'attendance', label: 'Attendance', icon: CheckCircle },
     { id: 'certificates', label: 'Certificates', icon: Award },
     { id: 'tasks', label: 'Tasks', icon: CheckSquare },
+    { id: 'feedback', label: 'Feedback Insights', icon: MessageSquare },
     { id: 'updates', label: 'Event Updates', icon: Bell },
     { id: 'analytics', label: 'Analytics', icon: BarChart2 },
   ],

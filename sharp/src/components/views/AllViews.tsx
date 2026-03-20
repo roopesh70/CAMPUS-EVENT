@@ -11,7 +11,7 @@ import { useEvents } from '@/hooks/useEvents';
 import { useRegistrations } from '@/hooks/useRegistrations';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useVenues } from '@/hooks/useVenues';
-import { useFeedback } from '@/hooks/useFeedback';
+import { useFeedback, analyzeSentiment } from '@/hooks/useFeedback';
 import { useActivityLogs } from '@/hooks/useActivityLogs';
 import { useTasks } from '@/hooks/useTasks';
 import { useCertificates } from '@/hooks/useCertificates';
@@ -624,7 +624,7 @@ export function FeedbackPage() {
       content: ratings['Content Quality'] || 0,
       organization: ratings['Organization'] || 0,
       venue: ratings['Venue & Facilities'] || 0,
-      speaker: 0,
+      speaker: ratings['Speaker/Facilitator'] || 0,
       overall: ratings['Overall'] || 0,
     };
     const result = await submitFeedback(eventId, anonymous ? null : profile.uid, ratingsObj, comment, anonymous);
@@ -670,7 +670,7 @@ export function FeedbackPage() {
             </select>
           )}
         </div>
-        {['Content Quality', 'Organization', 'Venue & Facilities', 'Overall'].map((dim) => (
+        {['Content Quality', 'Organization', 'Venue & Facilities', 'Speaker/Facilitator', 'Overall'].map((dim) => (
           <div key={dim} className="flex items-center justify-between">
             <span className="font-black uppercase text-[9px] italic opacity-60">{dim}</span>
             <div className="flex gap-1">
@@ -1211,6 +1211,178 @@ export function OrganizerMyEvents() {
             </div>
           </BrutalCard>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ===== Organizer: Feedback & Insights ===== */
+export function OrganizerFeedbackPage() {
+  const { profile } = useAuthStore();
+  const { events, fetchOrganizerEvents } = useEvents();
+  const { fetchEventFeedback, feedbackList, loading } = useFeedback();
+  const [selectedEvent, setSelectedEvent] = useState('');
+
+  useEffect(() => {
+    if (profile?.uid) fetchOrganizerEvents(profile.uid);
+  }, [profile?.uid, fetchOrganizerEvents]);
+
+  useEffect(() => {
+    if (selectedEvent) fetchEventFeedback(selectedEvent);
+  }, [selectedEvent, fetchEventFeedback]);
+
+  const feedbackCount = feedbackList.length;
+  let avgOverall = 0;
+  let pos = 0, neu = 0, neg = 0;
+  
+  const dimAvgs = { content: 0, organization: 0, venue: 0, speaker: 0 };
+  const wordFreq: Record<string, number> = {};
+
+  if (feedbackCount > 0) {
+    avgOverall = feedbackList.reduce((sum, f) => sum + (f.ratings?.overall || 0), 0) / feedbackCount;
+    feedbackList.forEach(f => {
+      ['content', 'organization', 'venue', 'speaker'].forEach(d => {
+        dimAvgs[d as keyof typeof dimAvgs] += (f.ratings as any)?.[d] || 0;
+      });
+      
+      const sentiment = analyzeSentiment(f.comment);
+      if (sentiment === 'positive') pos++;
+      else if (sentiment === 'negative') neg++;
+      else neu++;
+
+      // Basic word extraction
+      if (f.comment) {
+        const words = f.comment.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/);
+        const stopWords = new Set(['the', 'and', 'is', 'a', 'to', 'of', 'in', 'it', 'for', 'was', 'on', 'that', 'this', 'but', 'are', 'with', 'as', 'at']);
+        words.forEach(w => {
+          if (w.length > 3 && !stopWords.has(w)) wordFreq[w] = (wordFreq[w] || 0) + 1;
+        });
+      }
+    });
+
+    Object.keys(dimAvgs).forEach(k => dimAvgs[k as keyof typeof dimAvgs] /= feedbackCount);
+  }
+
+  const topWords = Object.entries(wordFreq).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  
+  // Actionable Insights Logic
+  const insights = [];
+  if (feedbackCount >= 2) { // lowered to 2 for easier testing
+    if (dimAvgs.venue < 3.5) insights.push('⚠️ Venue ratings are low. Consider booking a different facility next time.');
+    if (dimAvgs.organization < 3.5) insights.push('⚠️ Organization score is low. Try creating more detailed volunteer task lists.');
+    if (dimAvgs.content < 3.5) insights.push('⚠️ Content quality rated poorly. Ensure the event topics align with expectations.');
+    if (dimAvgs.speaker > 4.5 && avgOverall >= 4.0) insights.push('💡 Excellent speaker performance! Consider inviting them back.');
+    if (pos > neg * 2) insights.push('🌟 Overwhelmingly positive sentiment! This format is highly successful.');
+    
+    if (insights.length === 0) insights.push('👍 Solid performance across all dimensions. Keep it up!');
+  }
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">Feedback & Insights</h2>
+      
+      <div className="space-y-1.5">
+        <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Select Managed Event</label>
+        <select value={selectedEvent} onChange={e => setSelectedEvent(e.target.value)}
+          className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+          <option value="">Choose event...</option>
+          {events.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+        </select>
+      </div>
+
+      {selectedEvent && (
+        <>
+          {feedbackCount === 0 ? (
+            <BrutalCard className="p-8 text-center text-slate-400 font-bold italic">No feedback received for this event yet.</BrutalCard>
+          ) : (
+            <div className="space-y-6">
+              {/* Top Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <BrutalCard color={COLORS.teal} className="p-4 text-center">
+                  <span className="text-[8px] font-black uppercase opacity-60">Avg Overall</span>
+                  <div className="text-3xl font-black mt-1">{avgOverall.toFixed(1)}</div>
+                </BrutalCard>
+                <BrutalCard color={COLORS.yellow} className="p-4 text-center">
+                  <span className="text-[8px] font-black uppercase opacity-60">Responses</span>
+                  <div className="text-3xl font-black mt-1">{feedbackCount}</div>
+                </BrutalCard>
+                <BrutalCard className="p-4 text-center col-span-2">
+                   <span className="text-[8px] font-black uppercase opacity-60">Sentiment Overview</span>
+                   <div className="flex justify-around items-center mt-2">
+                     <div className="text-center"><span className="text-sm font-black text-green-600">{pos}</span><br/><span className="text-[7px] uppercase font-black opacity-50">Positive</span></div>
+                     <div className="text-center"><span className="text-sm font-black text-slate-500">{neu}</span><br/><span className="text-[7px] uppercase font-black opacity-50">Neutral</span></div>
+                     <div className="text-center"><span className="text-sm font-black text-red-600">{neg}</span><br/><span className="text-[7px] uppercase font-black opacity-50">Negative</span></div>
+                   </div>
+                </BrutalCard>
+              </div>
+
+              {/* Dimensions & Insights */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <BrutalCard className="p-5 border-b-[6px] space-y-4">
+                  <h3 className="font-black uppercase text-sm italic">Dimension Averages</h3>
+                  <div className="space-y-3">
+                    {Object.entries(dimAvgs).map(([dim, avg]) => (
+                      <div key={dim} className="flex items-center gap-3">
+                        <span className="text-[9px] font-black uppercase w-24 truncate">{dim}</span>
+                        <div className="flex-1 h-3 bg-slate-100 border-[1.5px] border-black rounded-full overflow-hidden">
+                          <div className="h-full bg-yellow-400 max-w-full" style={{ width: `${(avg / 5) * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] font-black w-6 text-right">{avg.toFixed(1)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </BrutalCard>
+
+                <BrutalCard color={COLORS.lavender} className="p-5 border-b-[6px] space-y-4">
+                  <h3 className="font-black uppercase text-sm italic">Actionable Insights</h3>
+                  {insights.length > 0 ? (
+                    <ul className="space-y-3">
+                      {insights.map((ins, i) => (
+                        <li key={i} className="text-[11px] font-bold leading-snug">{ins}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[10px] font-bold opacity-50 italic">Need at least 2 feedback responses to generate insights.</p>
+                  )}
+                </BrutalCard>
+              </div>
+
+              {/* Word Cloud / Recurring Themes */}
+              {topWords.length > 0 && (
+                <BrutalCard className="p-5 border-b-[6px] space-y-4">
+                  <h3 className="font-black uppercase text-sm italic">Recurring Themes</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {topWords.map(([word, freq]) => (
+                      <span key={word} className="px-3 py-1 bg-white border-[2px] border-black rounded-xl text-[10px] font-black uppercase shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                            style={{ fontSize: `${Math.min(14, 8 + freq * 1.5)}px` }}>
+                        {word} <span className="opacity-40 text-[8px]">x{freq}</span>
+                      </span>
+                    ))}
+                  </div>
+                </BrutalCard>
+              )}
+
+              {/* Recent Comments */}
+              <BrutalCard className="p-5 border-b-[6px] space-y-4">
+                <h3 className="font-black uppercase text-sm italic">Recent Comments</h3>
+                <div className="space-y-3">
+                  {feedbackList.filter(f => f.comment && f.comment.trim().length > 0).slice(0, 5).map((f, idx) => (
+                    <div key={idx} className="p-3 bg-white border-[2px] border-black rounded-lg">
+                      <p className="text-[10px] font-bold italic">"{f.comment}"</p>
+                      <div className="flex justify-between items-center mt-2">
+                        <span className="text-[7.5px] font-black uppercase opacity-40">{f.anonymous ? 'Anonymous' : 'Student'}</span>
+                        <Badge text={analyzeSentiment(f.comment)} color={analyzeSentiment(f.comment) === 'positive' ? COLORS.green : analyzeSentiment(f.comment) === 'negative' ? COLORS.red : COLORS.yellow} />
+                      </div>
+                    </div>
+                  ))}
+                  {feedbackList.filter(f => f.comment && f.comment.trim().length > 0).length === 0 && (
+                    <p className="text-[10px] font-bold opacity-50 italic">No written comments to display.</p>
+                  )}
+                </div>
+              </BrutalCard>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1904,6 +2076,7 @@ export function AdminAnalytics() {
   const { events, fetchAllEvents } = useEvents();
   const [userCount, setUserCount] = useState(0);
   const [usersByRole, setUsersByRole] = useState<Record<string, number>>({});
+  const { fetchAllFeedback, feedbackList } = useFeedback();
 
   useEffect(() => {
     fetchAllEvents();
@@ -1913,13 +2086,28 @@ export function AdminAnalytics() {
       users.forEach(u => { roleMap[u.role || 'student'] = (roleMap[u.role || 'student'] || 0) + 1; });
       setUsersByRole(roleMap);
     });
-  }, [fetchAllEvents]);
+    fetchAllFeedback();
+  }, [fetchAllEvents, fetchAllFeedback]);
 
   const totalRegs = events.reduce((s, e) => s + (e.registeredCount || 0), 0);
   const avgFill = events.length > 0 ? Math.round(events.reduce((s, e) => s + ((e.registeredCount || 0) / Math.max(e.capacity, 1)) * 100, 0) / events.length) : 0;
   const approved = events.filter(e => e.status === 'approved').length;
   const pending = events.filter(e => e.status === 'pending').length;
   const rejected = events.filter(e => e.status === 'rejected').length;
+
+  // Feedback calculations
+  const feedbackCount = feedbackList.length;
+  let avgOverall = 0;
+  let pos = 0, neu = 0, neg = 0;
+  if (feedbackCount > 0) {
+    avgOverall = feedbackList.reduce((sum, f) => sum + (f.ratings?.overall || 0), 0) / feedbackCount;
+    feedbackList.forEach(f => {
+      const sentiment = analyzeSentiment(f.comment);
+      if (sentiment === 'positive') pos++;
+      else if (sentiment === 'negative') neg++;
+      else neu++;
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -2015,6 +2203,62 @@ export function AdminAnalytics() {
             </div>
           ))}
           {events.length === 0 && <p className="text-[10px] font-black uppercase italic opacity-30">No events yet</p>}
+        </BrutalCard>
+      </div>
+
+      {/* Platform Feedback Analytics */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <BrutalCard className="p-5 border-b-[6px] space-y-4">
+          <h3 className="font-black uppercase text-sm italic">Global Feedback Ratings</h3>
+          {feedbackCount > 0 ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="text-4xl font-black">{avgOverall.toFixed(1)}</div>
+                <div className="text-[10px] font-black uppercase opacity-50">Avg Overall<br/>Rating</div>
+              </div>
+              <div className="space-y-2">
+                {['content', 'organization', 'venue', 'speaker'].map(dim => {
+                  const dimAvg = feedbackList.reduce((sum, f) => sum + (f.ratings as any)?.[dim] || 0, 0) / feedbackCount;
+                  return (
+                    <div key={dim} className="flex items-center gap-3">
+                      <span className="text-[8px] font-black uppercase w-20 truncate">{dim}</span>
+                      <div className="flex-1 h-3 bg-slate-100 border-[1px] border-black rounded-full overflow-hidden">
+                        <div className="h-full bg-yellow-400" style={{ width: `${(dimAvg / 5) * 100}%` }} />
+                      </div>
+                      <span className="text-[9px] font-black w-6 text-right">{dimAvg.toFixed(1)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[10px] font-black uppercase italic opacity-30">No feedback submitted yet</p>
+          )}
+        </BrutalCard>
+
+        <BrutalCard className="p-5 border-b-[6px] space-y-4">
+          <h3 className="font-black uppercase text-sm italic">Sentiment Analysis</h3>
+          {feedbackCount > 0 ? (
+            <div className="flex items-center gap-6">
+              <div className="relative w-24 h-24 rounded-full border-[5px] border-black overflow-hidden flex shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                <div className="absolute inset-0 bg-red-400" style={{ clipPath: `polygon(50% 50%, -50% -50%, ${neg > 0 ? '150% 150%' : '-50% 150%'})` }} />
+                <div className="absolute inset-0 bg-slate-200" style={{ clipPath: `polygon(50% 50%, 150% 150%, ${neu > 0 ? '150% -50%' : '150% 150%'})` }} />
+                <div className="absolute inset-0 bg-green-400" style={{ clipPath: `polygon(50% 50%, ${pos/(feedbackCount||1) * 360}deg 0, 0 0)` /* rough visual */ }} />
+                <div className="absolute inset-1 bg-white rounded-full flex items-center justify-center border-[2px] border-black z-10">
+                  <span className="text-xl">
+                    {pos > neg && pos > neu ? '😄' : neg > pos && neg > neu ? '😡' : '😐'}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-2 flex-1">
+                <div className="flex items-center justify-between"><span className="text-[10px] font-black uppercase text-green-600">Positive</span><span className="text-sm font-black">{pos}</span></div>
+                <div className="flex items-center justify-between"><span className="text-[10px] font-black uppercase text-slate-500">Neutral</span><span className="text-sm font-black">{neu}</span></div>
+                <div className="flex items-center justify-between"><span className="text-[10px] font-black uppercase text-red-600">Negative</span><span className="text-sm font-black">{neg}</span></div>
+              </div>
+            </div>
+          ) : (
+             <p className="text-[10px] font-black uppercase italic opacity-30">No comments to analyze</p>
+          )}
         </BrutalCard>
       </div>
     </div>

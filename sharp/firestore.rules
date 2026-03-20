@@ -15,6 +15,34 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isEventOwner() {
+      return isAuthenticated() && resource.data.organizerId == request.auth.uid;
+    }
+
+    function validEventTimeRange() {
+      return request.resource.data.startTime < request.resource.data.endTime;
+    }
+
+    function canCreateEvent() {
+      return isAuthenticated()
+        && (isAdmin() || request.resource.data.organizerId == request.auth.uid)
+        && validEventTimeRange()
+        // Only admins can directly create an already-approved event.
+        && (request.resource.data.status != 'approved' || isAdmin());
+    }
+
+    function canUpdateEvent() {
+      return isAuthenticated() && (
+        isAdmin()
+        || (
+          isEventOwner()
+          && request.resource.data.organizerId == resource.data.organizerId
+          // Organizers cannot self-approve by writing status=approved.
+          && !(request.resource.data.status == 'approved' && resource.data.status != 'approved')
+        )
+      );
+    }
+
     // USERS
     match /users/{userId} {
       allow read: if isAuthenticated();
@@ -22,12 +50,12 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
     }
 
-    // EVENTS — public read, authenticated write
+    // EVENTS
     match /events/{eventId} {
       allow read: if true;
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      allow create: if canCreateEvent();
+      allow update: if canUpdateEvent();
+      allow delete: if isAdmin() || isEventOwner();
     }
 
     // VENUES

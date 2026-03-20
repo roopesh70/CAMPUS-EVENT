@@ -21,7 +21,7 @@ import {
   AnnouncementsPage, AboutPage,
   MyRegistrations, CertificatesPage, FeedbackPage,
   NotificationsPage, ProfilePage,
-  OrganizerMyEvents, ParticipantsPage, AttendancePage,
+  OrganizerMyEvents, ParticipantsPage, AttendancePage, OrganizerFeedbackPage,
   TasksPage, EventUpdatesPage, OrganizerAnalytics, AdminAnalytics,
   VenueManagement, UserManagement, SystemNotificationsPage,
   SystemSettingsPage, DataManagementPage, ActivityLogsPage,
@@ -55,11 +55,13 @@ function StudentView({ tab }: { tab: string }) {
 function OrganizerView({ tab }: { tab: string }) {
   if (tab === 'dashboard') return <OrganizerDashboard />;
   if (tab === 'my-events') return <OrganizerMyEvents />;
+  if (tab === 'calendar') return <CalendarView />;
   if (tab === 'create') return <CreateEventFlow />;
   if (tab === 'participants') return <ParticipantsPage />;
   if (tab === 'attendance') return <AttendancePage />;
   if (tab === 'certificates') return <CertificatesPage />;
   if (tab === 'tasks') return <TasksPage />;
+  if (tab === 'feedback') return <OrganizerFeedbackPage />;
   if (tab === 'updates') return <EventUpdatesPage />;
   if (tab === 'analytics') return <OrganizerAnalytics />;
   if (tab === 'notifications') return <NotificationsPage />;

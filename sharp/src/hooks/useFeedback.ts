@@ -19,6 +19,16 @@ export function useFeedback() {
     return data;
   }, []);
 
+  const fetchAllFeedback = useCallback(async () => {
+    setLoading(true);
+    const data = await queryDocs<Feedback>('feedback', [
+      orderBy('createdAt', 'desc'),
+    ]);
+    setFeedbackList(data);
+    setLoading(false);
+    return data;
+  }, []);
+
   const submitFeedback = useCallback(async (
     eventId: string,
     userId: string | null,
@@ -66,5 +76,22 @@ export function useFeedback() {
     return { id: docRef.id };
   }, []);
 
-  return { feedbackList, loading, fetchEventFeedback, submitFeedback };
+  return { feedbackList, loading, fetchEventFeedback, fetchAllFeedback, submitFeedback };
+}
+
+// Helper for basic sentiment analysis
+export function analyzeSentiment(comment: string): 'positive' | 'neutral' | 'negative' {
+  if (!comment) return 'neutral';
+  const text = comment.toLowerCase();
+  
+  const positiveWords = ['great', 'excellent', 'good', 'awesome', 'amazing', 'loved', 'helpful', 'informative', 'perfect', 'fantastic', 'best', 'enjoyed', 'insightful'];
+  const negativeWords = ['bad', 'poor', 'terrible', 'awful', 'boring', 'unorganized', 'waste', 'disappointing', 'worst', 'confusing', 'unhelpful', 'needs improvement'];
+  
+  let score = 0;
+  positiveWords.forEach(w => { if (text.includes(w)) score++; });
+  negativeWords.forEach(w => { if (text.includes(w)) score--; });
+  
+  if (score > 0) return 'positive';
+  if (score < 0) return 'negative';
+  return 'neutral';
 }
