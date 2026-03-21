@@ -11,9 +11,10 @@ import { useAuth } from '@/hooks/useAuth';
 interface LoginFormProps {
   onSwitchToRegister: () => void;
   onSuccess: () => void;
+  showRegisterLink?: boolean;
 }
 
-export function LoginForm({ onSwitchToRegister, onSuccess }: LoginFormProps) {
+export function LoginForm({ onSwitchToRegister, onSuccess, showRegisterLink = true }: LoginFormProps) {
   const { login, loginWithGoogle, resetPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -142,13 +143,15 @@ export function LoginForm({ onSwitchToRegister, onSuccess }: LoginFormProps) {
         >
           Forgot Password?
         </button>
-        <button
-          type="button"
-          onClick={onSwitchToRegister}
-          className="text-[9px] font-bold uppercase opacity-40 italic cursor-pointer hover:opacity-100 transition-opacity underline"
-        >
-          Create Account
-        </button>
+        {showRegisterLink && (
+          <button
+            type="button"
+            onClick={onSwitchToRegister}
+            className="text-[9px] font-bold uppercase opacity-40 italic cursor-pointer hover:opacity-100 transition-opacity underline"
+          >
+            Create Account
+          </button>
+        )}
       </div>
     </form>
   );

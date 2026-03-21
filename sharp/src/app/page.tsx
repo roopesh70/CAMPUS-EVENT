@@ -7,6 +7,7 @@ import { NAV_CONFIG } from '@/lib/constants';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Topbar } from '@/components/layout/Topbar';
 import { Footer } from '@/components/layout/Footer';
+import { useSettings } from '@/hooks/useSettings';
 
 // Views
 import { PublicHome } from '@/components/views/PublicHome';
@@ -89,6 +90,7 @@ function AdminView({ tab }: { tab: string }) {
 export default function HomePage() {
   const { role, isAuthenticated, loading } = useAuthStore();
   const { activeTab, setActiveTab } = useUIStore();
+  const { settings, loading: settingsLoading } = useSettings();
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Determine the effective nav role
@@ -111,7 +113,7 @@ export default function HomePage() {
   }, [activeTab]);
 
   // Show loading screen while auth initializes
-  if (loading) {
+  if (loading || settingsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFBEB]">
         <div className="text-center space-y-4">
@@ -133,6 +135,30 @@ export default function HomePage() {
       default: return <PublicView tab={activeTab} />;
     }
   };
+
+  const isMaintenance = settings?.maintenanceMode;
+  const isRoleRestricted = settings?.restrictedRoles?.includes(role || '');
+  const isRestricted = isMaintenance || isRoleRestricted;
+
+  if (isRestricted && role !== 'admin') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FFFBEB]">
+        <div className="text-center space-y-4 max-w-md p-8 border-[4px] border-black bg-white shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] rounded-2xl mx-4">
+          <div className={`w-16 h-16 border-[3px] border-black rounded-xl ${isMaintenance ? 'bg-yellow-400' : 'bg-red-400'} mx-auto flex items-center justify-center text-3xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]`}>
+            {isMaintenance ? '🚧' : '🔒'}
+          </div>
+          <h1 className="text-3xl font-black uppercase italic tracking-tighter">
+            {isMaintenance ? 'Maintenance Mode' : 'Access Restricted'}
+          </h1>
+          <p className="font-bold text-sm opacity-60">
+            {isMaintenance 
+              ? 'The platform is currently undergoing scheduled maintenance. Please check back later.' 
+              : `Access for ${role || 'your'} accounts has been temporarily restricted by administrators.`}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen font-mono text-black flex flex-col md:flex-row bg-[#FFFBEB]">

@@ -24,15 +24,7 @@ export interface UserProfile {
 }
 
 /* ===== Events ===== */
-export type EventCategory =
-  | 'technical'
-  | 'cultural'
-  | 'sports'
-  | 'academic'
-  | 'workshop'
-  | 'seminar'
-  | 'competition'
-  | 'social';
+export type EventCategory = string;
 
 export type EventStatus =
   | 'draft'
@@ -117,9 +109,24 @@ export interface CertificateTemplate {
   name: string;
   eventType: string; // EventCategory or 'all'
   layout: 'standard' | 'modern' | 'classic' | 'minimal' | 'elegant' | 'bold';
+  
+  // Custom Typography & Colors
+  fontFamily?: string;
   primaryColor: string;
   secondaryColor: string;
-  textColor?: string; // Global text color
+  primaryTextColor?: string;
+  secondaryTextColor?: string;
+  textColor?: string; // Legacy global text color
+  primaryFontSize?: number;
+  secondaryFontSize?: number;
+  
+  // Custom Positioning
+  idPosition?: { x?: number; y?: number };
+  datePosition?: { x?: number; y?: number };
+  signaturePosition?: { x?: number; y?: number };
+  bodyPosition?: { x?: number; y?: number };
+  bodyAlignment?: 'left' | 'center' | 'right';
+  
   borderStyle: 'solid' | 'double' | 'dashed' | 'none';
   logoUrl?: string; // Legacy single logo
   logoUrls?: string[]; // Multiple overlapping/placed logos
@@ -240,5 +247,7 @@ export interface SystemSettings {
   maintenanceMode: boolean;
   supportEmail: string;
   allowAnonymousFeedback: boolean;
+  eventCategories?: { id: string; name: string; isActive: boolean }[];
+  restrictedRoles?: string[];
   updatedAt?: Timestamp;
 }

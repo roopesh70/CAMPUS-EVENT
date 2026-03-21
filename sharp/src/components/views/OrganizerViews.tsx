@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { PlusCircle, ChevronRight, MoreVertical } from 'lucide-react';
+import { CirclePlus, ChevronRight, MoreVertical } from 'lucide-react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { BrutalInput } from '@/components/ui/BrutalInput';
@@ -10,6 +10,7 @@ import { COLORS } from '@/lib/constants';
 import { useAuthStore } from '@/stores/authStore';
 import { useEvents } from '@/hooks/useEvents';
 import { useVenues } from '@/hooks/useVenues';
+import { useSettings } from '@/hooks/useSettings';
 import { useTasks } from '@/hooks/useTasks';
 import { useCloudinary } from '@/hooks/useCloudinary';
 import { useActivityLogs } from '@/hooks/useActivityLogs';
@@ -45,7 +46,7 @@ export function OrganizerDashboard() {
           Event Center
         </h2>
         <BrutalButton color={COLORS.yellow} className="px-6 py-2 text-[10px]" onClick={() => setActiveTab('create')}>
-          <PlusCircle className="w-4 h-4" /> New Proposal
+          <CirclePlus className="w-4 h-4" /> New Proposal
         </BrutalButton>
       </div>
 
@@ -122,6 +123,7 @@ export function CreateEventFlow() {
   const { venues, fetchVenues } = useVenues();
   const { uploadImage, uploading, progress: uploadProgress } = useCloudinary();
   const { logActivity } = useActivityLogs();
+  const { settings } = useSettings();
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -238,7 +240,7 @@ export function CreateEventFlow() {
         startTime: startTs,
         endTime: endTs,
         capacity: parseInt(capacity) || 100,
-        status: 'pending',
+        status: settings?.requireEventApproval === false ? 'approved' : 'pending',
         outcomeStatus: null,
         eligibility: { departments: eligDepts, years: eligYears },
         resources,
@@ -325,14 +327,13 @@ export function CreateEventFlow() {
               <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Category</label>
               <select value={category} onChange={e => setCategory(e.target.value as EventCategory)}
                 className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
-                <option value="technical">Technical Workshop</option>
-                <option value="cultural">Cultural Festival</option>
-                <option value="sports">Sports Tournament</option>
-                <option value="academic">Academic Seminar</option>
-                <option value="competition">Competition</option>
-                <option value="social">Social Event</option>
-                <option value="workshop">Workshop</option>
-                <option value="seminar">Seminar</option>
+                {settings?.eventCategories?.filter(c => c.isActive).length ? (
+                  settings.eventCategories.filter(c => c.isActive).map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))
+                ) : (
+                  <option value="">No active categories</option>
+                )}
               </select>
             </div>
             <div className="space-y-1.5">

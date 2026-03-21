@@ -88,7 +88,7 @@ export async function renderCertificateDataUrl(
       : new Date().toLocaleDateString(),
     id: cert.verificationCode || 'SAMPLE-1234',
     department: overrides?.department || cert.department || 'Department',
-    year: (overrides?.year || cert.year) ? `${overrides?.year || cert.year}${['st','nd','rd'][((overrides?.year || cert.year)! % 10)-1] || 'th'} Year` : 'Academic Year',
+    year: (overrides?.year || cert.year) ? `${overrides?.year || cert.year}${['st','nd','rd'][((overrides?.year || cert.year)! % 10)-1] || 'th'} Year` : '',
     currentYear: new Date().getFullYear().toString()
   };
 
@@ -134,37 +134,28 @@ export async function renderCertificateDataUrl(
     }
   }
 
-  // Typography Settings based on layout
-  let headerFont = 'bold 48px monospace';
-  let titleFont = 'bold 36px monospace';
-  let nameFont = 'bold 46px monospace';
-  let bodyFont = '22px monospace';
-  let footerFont = '18px monospace';
-  let yOffset = 0;
+  // Typography Settings based on layout or custom properties
+  const baseFontFamily = template.fontFamily || (template.layout === 'classic' || template.layout === 'elegant' ? 'serif' : template.layout === 'bold' || template.layout === 'minimal' ? 'sans-serif' : 'monospace');
+  
+  const pSize = template.primaryFontSize || (template.layout === 'bold' ? 52 : template.layout === 'minimal' ? 46 : template.layout === 'classic' ? 46 : 46);
+  const sSize = template.secondaryFontSize || (template.layout === 'bold' ? 24 : template.layout === 'minimal' ? 18 : template.layout === 'classic' ? 24 : 22);
+  
+  const headerWeight = template.layout === 'bold' ? '900' : template.layout === 'minimal' ? '300' : 'bold';
+  const nameWeight = template.layout === 'bold' ? '900' : template.layout === 'minimal' ? '300' : 'bold';
+  const bodyWeight = template.layout === 'minimal' ? '300' : 'normal';
 
-  if (template.layout === 'classic' || template.layout === 'elegant') {
-    headerFont = 'bold italic 56px serif';
-    titleFont = 'bold 36px serif';
-    nameFont = 'bold italic 46px serif';
-    bodyFont = '24px serif';
-    footerFont = '18px serif';
-  } else if (template.layout === 'bold') {
-    headerFont = '900 64px sans-serif';
-    titleFont = 'bold 40px sans-serif';
-    nameFont = '900 52px sans-serif';
-    bodyFont = '24px sans-serif';
-    footerFont = '16px sans-serif';
-  } else if (template.layout === 'minimal') {
-    headerFont = '300 48px sans-serif';
-    titleFont = '400 32px sans-serif';
-    nameFont = '300 46px sans-serif';
-    bodyFont = '18px sans-serif';
-    footerFont = '14px sans-serif';
-    yOffset = 40;
-  }
+  let headerFont = `${headerWeight} ${pSize + 12}px ${baseFontFamily}`;
+  let titleFont = `bold ${pSize - 10}px ${baseFontFamily}`;
+  let nameFont = `${nameWeight} ${template.layout === 'classic' || template.layout === 'elegant' ? 'italic ' : ''}${pSize}px ${baseFontFamily}`;
+  let bodyFont = `${bodyWeight} ${sSize}px ${baseFontFamily}`;
+  let footerFont = `${sSize - 4}px ${baseFontFamily}`;
+  let yOffset = template.layout === 'minimal' ? 40 : 0;
+  
+  const pTextColor = template.primaryTextColor || textColor;
+  const sTextColor = template.secondaryTextColor || textColor;
 
   // Header
-  ctx.fillStyle = template.layout === 'bold' ? primaryColor : textColor;
+  ctx.fillStyle = template.layout === 'bold' ? primaryColor : pTextColor;
   ctx.textAlign = 'center';
   ctx.font = headerFont;
   ctx.fillText(header, canvas.width / 2, 200 + yOffset);
@@ -176,42 +167,62 @@ export async function renderCertificateDataUrl(
   }
 
   // Body
-  ctx.fillStyle = textColor;
+  ctx.fillStyle = sTextColor;
   ctx.font = bodyFont;
+  ctx.textAlign = template.bodyAlignment || 'center';
   
   const bodyLines = body.split('\n');
-  let startY = 320 + yOffset;
+  
+  // Custom or default body position
+  const bodyX = template.bodyPosition?.x !== undefined ? template.bodyPosition.x : (template.bodyAlignment === 'left' ? 120 : template.bodyAlignment === 'right' ? canvas.width - 120 : canvas.width / 2);
+  let startY = template.bodyPosition?.y !== undefined ? template.bodyPosition.y : (320 + yOffset);
   
   bodyLines.forEach((line) => {
     if (line === renderVars.participantName) {
+      ctx.fillStyle = pTextColor;
       ctx.font = nameFont;
-      ctx.fillText(line, canvas.width / 2, startY);
+      ctx.fillText(line, bodyX, startY);
+      ctx.fillStyle = sTextColor;
       ctx.font = bodyFont;
       startY += 60;
     } else if (line === renderVars.eventTitle) {
+      ctx.fillStyle = pTextColor;
       ctx.font = titleFont;
-      ctx.fillText(line, canvas.width / 2, startY);
+      ctx.fillText(line, bodyX, startY);
+      ctx.fillStyle = sTextColor;
       ctx.font = bodyFont;
       startY += 50;
     } else if (line.trim() === '') {
       startY += 20; 
     } else {
-      ctx.fillText(line, canvas.width / 2, startY);
+      ctx.fillText(line, bodyX, startY);
       startY += 40;
     }
   });
 
-  // Footer / Verification info
+  // Default legacy footer parsing if no explicit pos provided
   ctx.globalAlpha = 0.7;
-  ctx.fillStyle = textColor;
+  ctx.fillStyle = sTextColor;
   ctx.font = footerFont;
-  const footerLines = footer.split('\n');
-  let footY = 700;
-  ctx.textAlign = 'left';
-  footerLines.forEach((line) => {
-    ctx.fillText(line, 80, footY);
-    footY += 25;
-  });
+  
+  if (template.idPosition || template.datePosition) {
+    if (template.idPosition) {
+      ctx.textAlign = 'left';
+      ctx.fillText(`ID: ${renderVars.id}`, template.idPosition.x, template.idPosition.y);
+    }
+    if (template.datePosition) {
+      ctx.textAlign = 'left';
+      ctx.fillText(`Date: ${renderVars.date}`, template.datePosition.x, template.datePosition.y);
+    }
+  } else {
+    const footerLines = footer.split('\n');
+    let footY = 700;
+    ctx.textAlign = 'left';
+    footerLines.forEach((line) => {
+      ctx.fillText(line, 80, footY);
+      footY += 25;
+    });
+  }
   ctx.globalAlpha = 1.0;
 
   // Signature
@@ -219,8 +230,8 @@ export async function renderCertificateDataUrl(
   const sigImgUrl = overrides?.signatureImageUrl || template.signatureImageUrl;
   
   ctx.textAlign = 'center';
-  const sigX = canvas.width - 250;
-  const sigY = 680;
+  const sigX = template.signaturePosition?.x !== undefined ? template.signaturePosition.x : (canvas.width - 250);
+  const sigY = template.signaturePosition?.y !== undefined ? template.signaturePosition.y : 680;
 
   if (sigImgUrl) {
     try {
@@ -239,7 +250,7 @@ export async function renderCertificateDataUrl(
 
   // Signature line
   if (template.layout !== 'minimal') {
-      ctx.strokeStyle = textColor;
+      ctx.strokeStyle = pTextColor;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(sigX - 120, sigY + 10);
@@ -247,8 +258,8 @@ export async function renderCertificateDataUrl(
       ctx.stroke();
   }
 
-  ctx.fillStyle = textColor;
-  ctx.font = template.layout === 'minimal' ? '14px sans-serif' : 'bold 16px sans-serif';
+  ctx.fillStyle = pTextColor;
+  ctx.font = `${template.layout === 'minimal' ? 'normal' : 'bold'} ${sSize - 2}px ${baseFontFamily}`;
   ctx.fillText(sigText, sigX, sigY + 35);
 
   return canvas.toDataURL('image/png');

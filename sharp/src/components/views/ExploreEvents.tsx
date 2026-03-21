@@ -12,6 +12,7 @@ import { useRegistrations } from '@/hooks/useRegistrations';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
+import { useSettings } from '@/hooks/useSettings';
 import type { CampusEvent } from '@/types';
 
 export function ExploreEvents() {
@@ -20,6 +21,7 @@ export function ExploreEvents() {
   const { profile, isAuthenticated } = useAuthStore();
   const { createNotification } = useNotifications(useAuthStore.getState().profile?.uid);
   const { setActiveTab, targetEventId, setTargetEventId } = useUIStore();
+  const { settings } = useSettings();
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'popularity'>('date');
@@ -56,7 +58,20 @@ export function ExploreEvents() {
 
   const isRegisteredFor = (eventId: string) => registeredEventIds.has(eventId);
 
-  const categories = ['all', 'technical', 'cultural', 'sports', 'academic', 'workshop', 'competition', 'social', 'seminar'];
+  const categories = [
+    { id: 'all', name: 'All' },
+    ...(settings?.eventCategories || [
+      { id: 'technical', name: 'Technical' },
+      { id: 'cultural', name: 'Cultural' },
+      { id: 'sports', name: 'Sports' }
+    ])
+  ];
+
+  const getCategoryName = (id: string) => {
+    if (id === 'all') return 'All';
+    const found = settings?.eventCategories?.find(c => c.id === id);
+    return found ? found.name : id;
+  };
 
   // Trending: top 3 by registrations
   const trending = useMemo(() =>
@@ -137,8 +152,10 @@ export function ExploreEvents() {
   };
 
   const catColor = (cat: string) => {
-    const map: Record<string, string> = { technical: COLORS.teal, cultural: COLORS.pink, sports: COLORS.yellow, academic: COLORS.lavender, workshop: COLORS.teal, competition: COLORS.yellow, social: COLORS.pink, seminar: COLORS.lavender };
-    return map[cat] || COLORS.teal;
+    const defaultColors = [COLORS.teal, COLORS.pink, COLORS.yellow, COLORS.lavender];
+    let sum = 0;
+    for (let i = 0; i < cat.length; i++) sum += cat.charCodeAt(i);
+    return defaultColors[sum % defaultColors.length];
   };
 
   // Countdown helper
@@ -199,7 +216,7 @@ export function ExploreEvents() {
                 </div>
                 <div className="min-w-0">
                   <h4 className="text-[10px] font-black uppercase italic truncate">{evt.title}</h4>
-                  <p className="text-[8px] font-bold opacity-40">{Math.max(evt.registeredCount || 0, 0)} registered • {evt.category}</p>
+                  <p className="text-[8px] font-bold opacity-40">{Math.max(evt.registeredCount || 0, 0)} registered • {getCategoryName(evt.category)}</p>
                 </div>
               </div>
             ))}
@@ -219,9 +236,9 @@ export function ExploreEvents() {
       {/* Category Pills */}
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
         {categories.map(cat => (
-          <button key={cat} onClick={() => setCatFilter(cat)}
-            className={`whitespace-nowrap border-[2px] border-black px-4 py-1.5 font-black uppercase text-[9px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${catFilter === cat ? 'bg-yellow-400' : 'bg-white'}`}>
-            {cat}
+          <button key={cat.id} onClick={() => setCatFilter(cat.id)}
+            className={`whitespace-nowrap border-[2px] border-black px-4 py-1.5 font-black uppercase text-[9px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${catFilter === cat.id ? 'bg-yellow-400' : 'bg-white'}`}>
+            {cat.name}
           </button>
         ))}
       </div>
@@ -249,7 +266,7 @@ export function ExploreEvents() {
                   <div className="absolute top-2 right-2"><Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.yellow} /></div>
                 </div>
                 <div className="p-4 space-y-2">
-                  <Badge text={evt.category} color={catColor(evt.category)} />
+                  <Badge text={getCategoryName(evt.category)} color={catColor(evt.category)} />
                   <h4 className="text-sm font-black uppercase italic leading-tight">{evt.title}</h4>
                   <div className="flex items-center gap-3 text-[8px] font-bold opacity-40 uppercase">
                     <span className="flex items-center gap-0.5"><Clock className="w-2.5 h-2.5" /> {formatDate(evt)}</span>
@@ -285,7 +302,7 @@ export function ExploreEvents() {
             <div className="border-b-[2.5px] border-black p-5 flex justify-between items-start bg-slate-50">
               <div>
                 <div className="flex gap-2 mb-2">
-                  <Badge text={selectedEvent.category} color={catColor(selectedEvent.category)} />
+                  <Badge text={getCategoryName(selectedEvent.category)} color={catColor(selectedEvent.category)} />
                   <Badge text={selectedEvent.status} color={selectedEvent.status === 'approved' ? COLORS.green : COLORS.yellow} />
                   {getCountdown(selectedEvent) && (
                     <span className="flex items-center gap-1 bg-orange-100 border-[1.5px] border-orange-400 rounded-lg px-2 py-0.5">

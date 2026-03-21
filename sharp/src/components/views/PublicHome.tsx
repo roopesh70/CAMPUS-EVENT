@@ -8,11 +8,25 @@ import { Badge } from '@/components/ui/Badge';
 import { COLORS } from '@/lib/constants';
 import { useEvents } from '@/hooks/useEvents';
 import { useUIStore } from '@/stores/uiStore';
+import { useSettings } from '@/hooks/useSettings';
 import type { CampusEvent } from '@/types';
 
 export function PublicHome() {
   const { events, fetchPublicEvents } = useEvents();
   const { setActiveTab } = useUIStore();
+  const { settings } = useSettings();
+
+  const getCategoryName = (id: string) => {
+    const found = settings?.eventCategories?.find(c => c.id === id);
+    return found ? found.name : id;
+  };
+
+  const catColor = (catId: string) => {
+    const defaultColors = [COLORS.teal, COLORS.pink, COLORS.yellow, COLORS.lavender];
+    let sum = 0;
+    for (let i = 0; i < catId.length; i++) sum += catId.charCodeAt(i);
+    return defaultColors[sum % defaultColors.length];
+  };
 
   useEffect(() => { fetchPublicEvents(); }, [fetchPublicEvents]);
 
@@ -63,13 +77,7 @@ export function PublicHome() {
             </BrutalCard>
           ) : (
             featured.map((evt, i) => {
-              const cats: Record<string, { color: string }> = {
-                technical: { color: COLORS.teal },
-                cultural: { color: COLORS.pink },
-                sports: { color: COLORS.yellow },
-                academic: { color: COLORS.lavender },
-              };
-              const color = cats[evt.category]?.color || COLORS.teal;
+              const color = catColor(evt.category);
               return (
                 <BrutalCard key={evt.id} className="p-0 group overflow-hidden border-b-[5px]">
                   <div className="h-36 border-b-[2px] border-black bg-slate-100 overflow-hidden flex items-center justify-center relative">
@@ -80,7 +88,7 @@ export function PublicHome() {
                     )}
                   </div>
                   <div className="p-4 space-y-2">
-                    <Badge text={evt.category} color={color} />
+                    <Badge text={getCategoryName(evt.category)} color={color} />
                     <h4 className="text-md font-black uppercase italic leading-tight">{evt.title}</h4>
                     <p className="text-[8px] font-bold opacity-40 uppercase tracking-widest">{evt.organizerName} • {evt.registeredCount} registered</p>
                     <BrutalButton className="w-full mt-2 bg-yellow-400 border-2" onClick={() => { useUIStore.getState().setTargetEventId(evt.id); setActiveTab('explore'); }}>View Now</BrutalButton>

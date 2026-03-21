@@ -9,27 +9,45 @@ import { COLORS } from '@/lib/constants';
 import { useEvents } from '@/hooks/useEvents';
 import { useRegistrations } from '@/hooks/useRegistrations';
 import { useAuthStore } from '@/stores/authStore';
+import { useSettings } from '@/hooks/useSettings';
 import type { CampusEvent } from '@/types';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const CATEGORIES = ['all', 'technical', 'cultural', 'sports', 'academic', 'workshop', 'competition', 'social', 'seminar'];
-
-const catColor = (cat: string) => {
-  const map: Record<string, string> = { technical: COLORS.teal, cultural: COLORS.pink, sports: COLORS.yellow, academic: COLORS.lavender, workshop: COLORS.teal, competition: COLORS.yellow, social: COLORS.pink, seminar: COLORS.lavender };
-  return map[cat] || COLORS.teal;
-};
 
 export function CalendarView() {
   const { events, fetchPublicEvents, fetchOrganizerEvents, fetchAllEvents } = useEvents();
   const { registrations, fetchUserRegistrations } = useRegistrations();
   const { profile, isAuthenticated, role } = useAuthStore();
+  const { settings } = useSettings();
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [catFilter, setCatFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'month' | 'list'>('month');
   const [showMine, setShowMine] = useState(false);
+
+  const categories = [
+    { id: 'all', name: 'All' },
+    ...(settings?.eventCategories || [
+      { id: 'technical', name: 'Technical' },
+      { id: 'cultural', name: 'Cultural' },
+      { id: 'sports', name: 'Sports' }
+    ])
+  ];
+
+  const catColor = (catId: string) => {
+    const defaultColors = [COLORS.teal, COLORS.pink, COLORS.yellow, COLORS.lavender];
+    let sum = 0;
+    for (let i = 0; i < catId.length; i++) sum += catId.charCodeAt(i);
+    return defaultColors[sum % defaultColors.length];
+  };
+
+  const getCategoryName = (id: string) => {
+    if (id === 'all') return 'All';
+    const found = settings?.eventCategories?.find(c => c.id === id);
+    return found ? found.name : id;
+  };
 
   useEffect(() => {
     if (showMine && role === 'organizer' && profile?.uid) {
@@ -109,10 +127,10 @@ export function CalendarView() {
 
       {/* Category Filter */}
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-        {CATEGORIES.map(cat => (
-          <button key={cat} onClick={() => setCatFilter(cat)}
-            className={`whitespace-nowrap border-[2px] border-black px-3 py-1 font-black uppercase text-[8px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${catFilter === cat ? 'bg-yellow-400' : 'bg-white'}`}>
-            {cat}
+        {categories.map(cat => (
+          <button key={cat.id} onClick={() => setCatFilter(cat.id)}
+            className={`whitespace-nowrap border-[2px] border-black px-3 py-1 font-black uppercase text-[8px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${catFilter === cat.id ? 'bg-yellow-400' : 'bg-white'}`}>
+            {cat.name}
           </button>
         ))}
       </div>
@@ -202,7 +220,7 @@ export function CalendarView() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
-                      <Badge text={evt.category} color={catColor(evt.category)} />
+                      <Badge text={getCategoryName(evt.category)} color={catColor(evt.category)} />
                       {evt.outcomeStatus && <Badge text={evt.outcomeStatus} color={evt.outcomeStatus === 'success' ? COLORS.green : COLORS.red} />}
                     </div>
                     <h4 className="font-black uppercase text-[11px] italic truncate">{evt.title}</h4>
@@ -229,7 +247,7 @@ export function CalendarView() {
               const time = evt.startTime?.toDate ? evt.startTime.toDate().toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' }) : '';
               return (
                 <div key={evt.id} className="flex items-center gap-3 bg-white border-[2px] border-black rounded-xl p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                  <Badge text={evt.category} color={catColor(evt.category)} />
+                  <Badge text={getCategoryName(evt.category)} color={catColor(evt.category)} />
                   <div className="flex-1">
                     <h4 className="font-black uppercase text-[11px] italic">{evt.title}</h4>
                     <p className="text-[8px] font-bold opacity-40">{evt.venueName} • {time} • {Math.max(evt.registeredCount || 0, 0)}/{evt.capacity} registered</p>

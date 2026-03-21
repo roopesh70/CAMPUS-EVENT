@@ -86,6 +86,18 @@ export async function updateDocument(
   });
 }
 
+// Merge doc (create or update)
+export async function mergeDocument(
+  collectionPath: string,
+  docId: string,
+  data: Partial<DocumentData>
+) {
+  return setDoc(doc(db, collectionPath, docId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
 // Delete doc
 export async function deleteDocument(
   collectionPath: string,

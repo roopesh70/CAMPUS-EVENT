@@ -1,7 +1,7 @@
 import {
   Home, Compass, Calendar, Bell, Info, LogIn, LayoutDashboard,
-  CheckSquare, Award, MessageSquare, User, PlusCircle,
-  Users, CheckCircle, FileText, BarChart2, ShieldCheck,
+  CheckSquare, Award, MessageSquare, User, CirclePlus,
+  Users, CheckCircle2, FileText, BarChart2, ShieldCheck,
   MapPin, Settings, Database, Activity, QrCode, Send,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -45,9 +45,9 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'my-events', label: 'My Events', icon: FileText },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
-    { id: 'create', label: 'Create Event', icon: PlusCircle },
+    { id: 'create', label: 'Create Event', icon: CirclePlus },
     { id: 'participants', label: 'Participants', icon: Users },
-    { id: 'attendance', label: 'Attendance', icon: CheckCircle },
+    { id: 'attendance', label: 'Attendance', icon: CheckCircle2 },
     { id: 'certificates', label: 'Certificates', icon: Award },
     { id: 'tasks', label: 'Tasks', icon: CheckSquare },
     { id: 'feedback', label: 'Feedback Insights', icon: MessageSquare },

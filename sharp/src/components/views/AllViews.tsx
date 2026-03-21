@@ -20,7 +20,13 @@ import { useCloudinary } from '@/hooks/useCloudinary';
 import { updateDocument, deleteDocument, queryDocs, addDocument, where, orderBy } from '@/lib/firestore';
 import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue, Certificate, CertificateTemplate } from '@/types';
 import { Timestamp } from 'firebase/firestore';
-import { Bell, Mail, Info, LogIn, Award, MessageSquare, CheckSquare, User, FileText, Users, CheckCircle, BarChart2, MapPin, Settings, Database, Activity, Send, Calendar, Search, PlusCircle, Edit, Trash2 } from 'lucide-react';
+import { 
+  Bell, Mail, Info, LogIn, Award as AwardIcon, MessageSquare, CheckSquare, User as UserIcon, FileText, 
+  Users, BarChart2, MapPin, Settings, Database, Activity, Send, 
+  Calendar, Search, Edit, Trash2, Eye, EyeOff, ShieldCheck,
+  ChevronRight, MoreVertical, XCircle, Menu, LogOut, LayoutDashboard,
+  Filter, Plus, Clock, CheckCircle2, CirclePlus
+} from 'lucide-react';
 import { renderCertificateDataUrl } from '@/lib/certificateRenderer';
 
 /* ===== Public: Announcements ===== */
@@ -505,7 +511,7 @@ export function CertificatesPage() {
 
                 {genResult && (
                   <div className={`p-3 border-[2.5px] border-black rounded-xl font-black text-[9px] uppercase shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] ${genResult.generated > 0 ? 'bg-green-300' : 'bg-yellow-100'}`}>
-                    <CheckCircle className="w-4 h-4 mb-1 inline-block mr-1" />
+                    <CheckCircle2 className="w-4 h-4" />
                     Issued: {genResult.generated} <br/>
                     Skipped (Duplicates): {genResult.skipped}
                   </div>
@@ -537,7 +543,7 @@ export function CertificatesPage() {
         <BrutalCard className="p-6 text-center"><p className="text-[10px] font-black uppercase italic opacity-30">Loading certificates...</p></BrutalCard>
       ) : certificates.length === 0 ? (
         <BrutalCard className="p-8 text-center space-y-3">
-          <Award className="w-12 h-12 mx-auto opacity-20" />
+          <AwardIcon className="w-12 h-12 mx-auto opacity-20" />
           <p className="text-[11px] font-black uppercase italic opacity-40">No certificates found</p>
           <p className="text-[9px] font-bold opacity-30">Attend events to earn certificates.</p>
         </BrutalCard>
@@ -595,6 +601,7 @@ export function FeedbackPage() {
   const { registrations: userRegs, fetchUserRegistrations } = useRegistrations();
   const { submitFeedback } = useFeedback();
   const { createNotification } = useNotifications(profile?.uid);
+  const { settings } = useSettings();
   const [eventId, setEventId] = useState('');
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [comment, setComment] = useState('');
@@ -685,10 +692,12 @@ export function FeedbackPage() {
           <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Comments</label>
           <textarea value={comment} onChange={e => setComment(e.target.value)} className="w-full border-[2.5px] border-black p-3 font-bold text-xs h-20 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl focus:outline-none" placeholder="Your feedback..." />
         </div>
-        <div className="flex items-center gap-3">
-          <input type="checkbox" className="w-4 h-4 accent-yellow-400" checked={anonymous} onChange={e => setAnonymous(e.target.checked)} />
-          <span className="font-black uppercase text-[9px] italic opacity-60">Submit Anonymously</span>
-        </div>
+        {settings?.allowAnonymousFeedback && (
+          <div className="flex items-center gap-3">
+            <input type="checkbox" className="w-4 h-4 accent-yellow-400" checked={anonymous} onChange={e => setAnonymous(e.target.checked)} />
+            <span className="font-black uppercase text-[9px] italic opacity-60">Submit Anonymously</span>
+          </div>
+        )}
         <BrutalButton className="w-full py-3" color={COLORS.yellow} onClick={handleSubmit} disabled={!eventId || submitting}>
           <Send className="w-4 h-4" /> {submitting ? 'Submitting...' : 'Submit Feedback'}
         </BrutalButton>
@@ -910,6 +919,7 @@ export function OrganizerMyEvents() {
   const { venues, fetchVenues } = useVenues();
   const { uploadImage, uploading, progress: uploadProgress } = useCloudinary();
   const { logActivity } = useActivityLogs();
+  const { settings } = useSettings();
   
   const [tab, setTab] = useState('all');
   const [editingEvent, setEditingEvent] = useState<CampusEvent | null>(null);
@@ -974,6 +984,7 @@ export function OrganizerMyEvents() {
       startTime: startTs,
       endTime: endTs,
       posterUrl: finalPosterUrl,
+      ...(settings?.requireEventApproval === false ? { status: 'approved' } : {}),
     };
     
     if (regDeadline) {
@@ -1139,14 +1150,13 @@ export function OrganizerMyEvents() {
                   <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Category</label>
                   <select value={editForm.category || ''} onChange={e => setEditForm({...editForm, category: e.target.value as any})}
                     className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
-                    <option value="technical">Technical Workshop</option>
-                    <option value="cultural">Cultural Festival</option>
-                    <option value="sports">Sports</option>
-                    <option value="academic">Academic</option>
-                    <option value="competition">Competition</option>
-                    <option value="social">Social</option>
-                    <option value="workshop">Workshop</option>
-                    <option value="seminar">Seminar</option>
+                    {settings?.eventCategories?.filter(c => c.isActive).length ? (
+                      settings.eventCategories.filter(c => c.isActive).map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))
+                    ) : (
+                      <option value="">No active categories</option>
+                    )}
                   </select>
                 </div>
                 <div className={`space-y-1.5 ${editForm.eventType === 'ONLINE' ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -1805,14 +1815,14 @@ export function AttendancePage() {
                               disabled={marking === r.id || r.attendanceStatus === 'present'}
                               className="w-7 h-7 bg-green-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
                             >
-                              <CheckCircle className="w-3.5 h-3.5" />
+                              <CheckCircle2 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => handleMark(r.id, 'absent')}
                               disabled={marking === r.id || r.attendanceStatus === 'absent'}
                               className="w-7 h-7 bg-red-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
                             >
-                              <User className="w-3.5 h-3.5" />
+                              <UserIcon className="w-3.5 h-3.5" />
                             </button>
                           </td>
                         </tr>
@@ -2019,6 +2029,21 @@ export function EventUpdatesPage() {
 export function OrganizerAnalytics() {
   const { profile } = useAuthStore();
   const { events, fetchOrganizerEvents } = useEvents();
+  const { settings } = useSettings();
+  
+  const getCategoryName = (id: string) => {
+    const found = settings?.eventCategories?.find(c => c.id === id);
+    return found ? found.name : id;
+  };
+
+  const catColor = (catId: string) => {
+    const defaultColors = [COLORS.teal, COLORS.pink, COLORS.yellow, COLORS.lavender];
+    let sum = 0;
+    for (let i = 0; i < catId.length; i++) sum += catId.charCodeAt(i);
+    return defaultColors[sum % defaultColors.length];
+  };
+
+  const categories = settings?.eventCategories?.map(c => c.id) || [];
 
   useEffect(() => {
     if (profile?.uid) fetchOrganizerEvents(profile.uid);
@@ -2088,11 +2113,11 @@ export function OrganizerAnalytics() {
         </BrutalCard>
         <BrutalCard className="p-5 border-b-[5px] space-y-3">
           <h3 className="font-black uppercase text-sm italic">Category Mix</h3>
-          {['technical', 'cultural', 'sports', 'academic', 'workshop', 'competition'].map(cat => {
+          {categories.map(cat => {
             const count = events.filter(e => e.category === cat).length;
             return count > 0 ? (
               <div key={cat} className="flex items-center justify-between">
-                <Badge text={cat} color={cat === 'technical' ? COLORS.teal : cat === 'cultural' ? COLORS.pink : cat === 'sports' ? COLORS.yellow : COLORS.lavender} />
+                <Badge text={getCategoryName(cat)} color={catColor(cat)} />
                 <span className="text-lg font-black">{count}</span>
               </div>
             ) : null;
@@ -2107,7 +2132,22 @@ export function OrganizerAnalytics() {
 /* ===== Admin: Platform Analytics ===== */
 export function AdminAnalytics() {
   const { events, fetchAllEvents } = useEvents();
+  const { settings } = useSettings();
   const [userCount, setUserCount] = useState(0);
+
+  const getCategoryName = (id: string) => {
+    const found = settings?.eventCategories?.find(c => c.id === id);
+    return found ? found.name : id;
+  };
+
+  const catColor = (catId: string) => {
+    const defaultColors = [COLORS.teal, COLORS.pink, COLORS.yellow, COLORS.lavender];
+    let sum = 0;
+    for (let i = 0; i < catId.length; i++) sum += catId.charCodeAt(i);
+    return defaultColors[sum % defaultColors.length];
+  };
+
+  const categories = settings?.eventCategories?.map(c => c.id) || [];
   const [usersByRole, setUsersByRole] = useState<Record<string, number>>({});
   const { fetchAllFeedback, feedbackList } = useFeedback();
 
@@ -2209,11 +2249,11 @@ export function AdminAnalytics() {
         <BrutalCard className="p-5 border-b-[6px] space-y-4">
           <h3 className="font-black uppercase text-sm italic">Events by Category</h3>
           <div className="grid grid-cols-2 gap-3">
-            {['technical', 'cultural', 'sports', 'academic', 'workshop', 'seminar', 'competition', 'social'].map(cat => {
+            {categories.map(cat => {
               const count = events.filter(e => e.category === cat).length;
               return (
                 <div key={cat} className="flex items-center justify-between border-[2px] border-black rounded-xl p-2.5">
-                  <Badge text={cat} color={cat === 'technical' ? COLORS.teal : cat === 'cultural' ? COLORS.pink : cat === 'sports' ? COLORS.yellow : COLORS.lavender} />
+                  <Badge text={getCategoryName(cat)} color={catColor(cat)} />
                   <span className="text-lg font-black">{count}</span>
                 </div>
               );
@@ -2471,13 +2511,24 @@ export function UserManagement() {
     }
     const data = await queryDocs<UserProfile>('users', []);
     // Merge strategy: preserve optimistic role if user is in pendingUpdates
-    setUsers(data.map(serverUser => {
-      const uid = serverUser.id || serverUser.uid;
-      if (uid && typeof uid === 'string' && pendingUpdates.current[uid]) {
-        return { ...serverUser, role: pendingUpdates.current[uid] as any };
-      }
-      return serverUser;
-    }));
+    setUsers(prevUsers => {
+      const updatedUsers = data.map(serverUser => {
+        const uid = serverUser.id || serverUser.uid;
+        if (uid && typeof uid === 'string' && pendingUpdates.current[uid]) {
+          return { ...serverUser, role: pendingUpdates.current[uid] as any };
+        }
+        return serverUser;
+      });
+      // Ensure users that were optimistically updated but not yet in `data` (e.g., new users) are still shown
+      const existingUids = new Set(data.map(u => u.id || u.uid));
+      const newOrPendingUsers = prevUsers.filter(u => {
+        const uid = u.id || u.uid;
+        return uid && (pendingUpdates.current[uid] || !existingUids.has(uid));
+      });
+      return Array.from(new Set([...updatedUsers, ...newOrPendingUsers].map(u => u.id || u.uid)))
+        .map(uid => updatedUsers.find(u => (u.id || u.uid) === uid) || newOrPendingUsers.find(u => (u.id || u.uid) === uid))
+        .filter(Boolean) as UserProfile[];
+    });
     if (initialLoadRef.current) {
       setLoading(false);
       initialLoadRef.current = false;
@@ -2621,7 +2672,7 @@ export function SystemNotificationsPage() {
             className="w-full border-[2.5px] border-black p-3 font-bold text-xs h-24 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl focus:outline-none" placeholder="Type your announcement..." />
         </div>
         {sent && <div className="bg-green-100 border-[2px] border-green-500 rounded-xl p-2 text-center"><span className="text-[10px] font-black uppercase text-green-700">✓ Broadcast sent to all users!</span></div>}
-        <BrutalButton className="w-full py-3" color={COLORS.yellow} onClick={handleSend} disabled={!message || sending}><Send className="w-4 h-4" /> {sending ? 'Sending...' : 'Send Announcement'}</BrutalButton>
+        <BrutalButton className="w-full py-3" color={COLORS.yellow} onClick={handleSend} disabled={!message || sending}><Send className="w-4 h-4" /> {sending ? 'Sending...' : 'Send Notification'}</BrutalButton>
       </BrutalCard>
 
       {/* Broadcast History */}
@@ -2679,6 +2730,93 @@ export function SystemSettingsPage() {
   const { settings, saveSettings, loading: settingsLoading } = useSettings();
   const [saving, setSaving] = useState(false);
   const [localSettings, setLocalSettings] = useState<any>(null);
+  const [newCategory, setNewCategory] = useState('');
+
+  const handleAddCategory = async () => {
+    if (!newCategory.trim() || !localSettings) return;
+    const id = newCategory.trim().toLowerCase().replace(/[^a-z0-9]/g, '-');
+    if (localSettings.eventCategories?.some((c: any) => c.id === id)) {
+      alert("Category already exists.");
+      return;
+    }
+    
+    setSaving(true);
+    const updatedCategories = [
+      ...(localSettings.eventCategories || []),
+      { id, name: newCategory.trim(), isActive: true }
+    ];
+    
+    const newSettings = { ...localSettings, eventCategories: updatedCategories };
+    setLocalSettings(newSettings);
+    setNewCategory('');
+
+    try {
+      await saveSettings(newSettings);
+    } catch (err: any) {
+      alert("Failed to save category: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleCategory = async (id: string) => {
+    if (!localSettings) return;
+    setSaving(true);
+    
+    const updatedCategories = localSettings.eventCategories?.map((c: any) => 
+      c.id === id ? { ...c, isActive: !c.isActive } : c
+    );
+    
+    const newSettings = { ...localSettings, eventCategories: updatedCategories };
+    setLocalSettings(newSettings);
+
+    try {
+      await saveSettings(newSettings);
+    } catch (err: any) {
+      alert("Failed to toggle category: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    if (!localSettings || !confirm('Permanently delete this category? Note: events using this category will still exist but lack a valid label.')) return;
+    setSaving(true);
+    
+    const updatedCategories = localSettings.eventCategories?.filter((c: any) => c.id !== id);
+    const newSettings = { ...localSettings, eventCategories: updatedCategories };
+    
+    setLocalSettings(newSettings);
+
+    try {
+      await saveSettings(newSettings);
+    } catch (err: any) {
+      alert("Failed to delete category: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleRoleRestriction = async (roleToToggle: string) => {
+    if (!localSettings) return;
+    setSaving(true);
+    const current = localSettings.restrictedRoles || [];
+    
+    const updatedRoles = current.includes(roleToToggle) 
+      ? current.filter((r: string) => r !== roleToToggle)
+      : [...current, roleToToggle];
+      
+    const newSettings = { ...localSettings, restrictedRoles: updatedRoles };
+    setLocalSettings(newSettings);
+
+    try {
+      await saveSettings(newSettings);
+    } catch (err: any) {
+      alert("Failed to toggle restriction: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     fetchAllEvents();
@@ -2735,7 +2873,7 @@ export function SystemSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-black text-sm uppercase">Maintenance Mode</p>
-                <p className="text-[9px] font-bold opacity-50">Restrict platform access during updates</p>
+                <p className="text-[9px] font-bold opacity-50">Enable global maintenance lock (Admins only)</p>
               </div>
               <input type="checkbox" checked={localSettings.maintenanceMode || false} onChange={e => setLocalSettings({...localSettings, maintenanceMode: e.target.checked})} className="w-5 h-5 accent-red-500 border-[2px] border-black outline-none cursor-pointer" />
             </div>
@@ -2778,24 +2916,63 @@ export function SystemSettingsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <BrutalCard className="p-6 space-y-4 border-b-[6px]">
           <h3 className="font-black uppercase text-sm italic">Event Categories</h3>
-          <div className="flex flex-wrap gap-2">
-            {['Technical', 'Cultural', 'Sports', 'Academic', 'Workshop', 'Seminar', 'Competition', 'Social'].map((cat) => (
-              <div key={cat} className="flex items-center gap-2 border-[2px] border-black px-3 py-1.5 rounded-xl bg-white">
-                <span className="font-black uppercase text-[9px]">{cat}</span>
-                <span className="text-[8px] font-bold opacity-30">{events.filter(e => e.category === cat.toLowerCase()).length}</span>
+          
+          <div className="flex gap-2">
+            <BrutalInput 
+              placeholder="New category name..." 
+              value={newCategory} 
+              onChange={(e) => setNewCategory(e.target.value)} 
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddCategory(); }}
+            />
+            <BrutalButton color={COLORS.yellow} className="px-5 text-xs" onClick={handleAddCategory}>Add</BrutalButton>
+          </div>
+
+          <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+            {(localSettings?.eventCategories || []).map((cat: any) => (
+              <div key={cat.id} className={`group flex items-center gap-2 border-[2px] border-black pl-3 pr-1 py-1 rounded-xl transition-all ${cat.isActive ? 'bg-white' : 'bg-gray-200 opacity-60'} ${saving ? 'pointer-events-none opacity-50' : ''}`}>
+                <span className={`font-black uppercase text-[9px] ${!cat.isActive && 'line-through'}`}>{cat.name}</span>
+                <span className="text-[8px] font-bold opacity-30 mr-2 bg-yellow-100 px-1 rounded">
+                  {events.filter(e => e.category === cat.id).length}
+                </span>
+
+                <div className="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => toggleCategory(cat.id)} className="p-1 hover:bg-yellow-300 rounded-md transition-colors" title={cat.isActive ? "Disable Category" : "Enable Category"}>
+                    {cat.isActive ? <EyeOff className="w-3 h-3 text-black" /> : <Eye className="w-3 h-3 text-black" />}
+                  </button>
+                  <button onClick={() => deleteCategory(cat.id)} className="p-1 hover:bg-red-400 rounded-md transition-colors" title="Delete Category">
+                    <Trash2 className="w-3 h-3 text-black" />
+                  </button>
+                </div>
               </div>
             ))}
+            {(!localSettings?.eventCategories || localSettings.eventCategories.length === 0) && (
+              <p className="text-[10px] uppercase font-bold opacity-50 italic">No categories defined.</p>
+            )}
           </div>
         </BrutalCard>
 
         <BrutalCard className="p-6 space-y-4 border-b-[6px]">
           <h3 className="font-black uppercase text-sm italic">User Roles Distribution</h3>
           <div className="flex gap-3 flex-wrap">
-            {['student', 'organizer', 'admin'].map(role => (
-              <div key={role} className="border-[2px] border-black px-4 py-2 rounded-xl bg-white text-center">
-                <span className="text-[10px] font-black uppercase tracking-wider">{role}</span>
-              </div>
-            ))}
+            {['student', 'organizer', 'admin'].map(role => {
+              const isRestricted = localSettings?.restrictedRoles?.includes(role);
+              const isAdmin = role === 'admin';
+              return (
+                <div key={role} className={`group relative border-[2px] border-black px-4 py-2 rounded-xl text-center overflow-hidden transition-all flex items-center gap-2 ${isRestricted ? 'bg-red-100 opacity-60' : 'bg-white'}`}>
+                  <span className={`text-[10px] font-black uppercase tracking-wider ${isRestricted && 'line-through'}`}>{role}</span>
+                  {isRestricted && <span className="text-[10px]" title="Access Restricted">🔒</span>}
+                  
+                  {!isAdmin && (
+                    <div 
+                      className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white text-[8px] font-black uppercase tracking-widest"
+                      onClick={() => toggleRoleRestriction(role)}
+                    >
+                      {isRestricted ? "Unrestrict" : "Restrict"}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </BrutalCard>
       </div>
@@ -3051,6 +3228,7 @@ export function ActivityLogsPage() {
 export function AdminCertificateTemplates() {
   const { templates, fetchTemplates, addTemplate, updateTemplate, deleteTemplate } = useCertificates();
   const { uploadImage } = useCloudinary();
+  const { settings } = useSettings();
   const [editingTemplate, setEditingTemplate] = useState<CertificateTemplate | null>(null);
   const [isNew, setIsNew] = useState(false);
   
@@ -3061,6 +3239,7 @@ export function AdminCertificateTemplates() {
   const [sigFile, setSigFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [clickedCoords, setClickedCoords] = useState<{x: number, y: number} | null>(null);
 
   useEffect(() => {
     fetchTemplates();
@@ -3169,9 +3348,21 @@ export function AdminCertificateTemplates() {
       delete rawPayload.logoUrl;
 
       // Strip undefined values which crash Firestore
-      const payload = Object.fromEntries(
-        Object.entries(rawPayload).filter(([_, v]) => v !== undefined)
-      ) as any;
+      const stripUndefined = (obj: any): any => {
+        if (Array.isArray(obj)) return obj.map(stripUndefined);
+        if (obj !== null && typeof obj === 'object') {
+          // Preserve Firebase Timestamps
+          if (typeof obj.toDate === 'function' || obj instanceof Date) return obj;
+          return Object.fromEntries(
+            Object.entries(obj)
+              .filter(([_, v]) => v !== undefined)
+              .map(([k, v]) => [k, stripUndefined(v)])
+          );
+        }
+        return obj;
+      };
+
+      const payload = stripUndefined(rawPayload);
 
       if (isNew) {
         await addTemplate(payload);
@@ -3228,14 +3419,18 @@ export function AdminCertificateTemplates() {
                 <label className="font-black uppercase text-[9px] opacity-40 italic">Event Category</label>
                 <select value={formData.eventType || 'all'} onChange={e => setFormData({ ...formData, eventType: e.target.value })} className="w-full border-[2.5px] border-black p-2 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
                   <option value="all">Any Event Type (Default)</option>
-                  <option value="technical">Technical</option>
-                  <option value="cultural">Cultural</option>
-                  <option value="sports">Sports</option>
+                  {settings?.eventCategories?.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                  {(!settings?.eventCategories?.length) && (
+                    <option value="technical">Technical</option>
+                  )}
                 </select>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Colors & Basic Style */}
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <label className="font-black uppercase text-[9px] opacity-40 italic">Primary Color</label>
                 <input type="color" value={formData.primaryColor || '#FACC15'} onChange={e => setFormData({ ...formData, primaryColor: e.target.value })} className="w-full h-10 border-[2.5px] border-black cursor-pointer rounded-lg" />
@@ -3245,10 +3440,6 @@ export function AdminCertificateTemplates() {
                 <input type="color" value={formData.secondaryColor || '#FFFBEB'} onChange={e => setFormData({ ...formData, secondaryColor: e.target.value })} className="w-full h-10 border-[2.5px] border-black cursor-pointer rounded-lg" />
               </div>
               <div className="space-y-1.5">
-                <label className="font-black uppercase text-[9px] opacity-40 italic">Text Color</label>
-                <input type="color" value={formData.textColor || '#000000'} onChange={e => setFormData({ ...formData, textColor: e.target.value })} className="w-full h-10 border-[2.5px] border-black cursor-pointer rounded-lg" />
-              </div>
-              <div className="space-y-1.5">
                 <label className="font-black uppercase text-[9px] opacity-40 italic">Border Style</label>
                 <select value={formData.borderStyle || 'solid'} onChange={e => setFormData({ ...formData, borderStyle: e.target.value as any })} className="w-full border-[2.5px] border-black p-2 font-bold text-[10px] bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-lg outline-none italic">
                   <option value="solid">Solid</option>
@@ -3256,6 +3447,92 @@ export function AdminCertificateTemplates() {
                   <option value="dashed">Dashed</option>
                   <option value="none">None</option>
                 </select>
+              </div>
+            </div>
+
+            {/* Typography */}
+            <div className="p-3 border-[2px] border-black rounded-xl bg-slate-50 space-y-4">
+              <h4 className="font-black uppercase text-[10px] tracking-widest opacity-60">Typography</h4>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="space-y-1.5 col-span-2 md:col-span-1">
+                  <label className="font-black uppercase text-[9px] opacity-40 italic">Font Family</label>
+                  <select value={formData.fontFamily || ''} onChange={e => setFormData({ ...formData, fontFamily: e.target.value })} className="w-full border-[2.5px] border-black p-1.5 font-bold text-[10px] bg-white rounded-lg outline-none">
+                    <option value="">Default (by Layout)</option>
+                    <option value="serif">Serif</option>
+                    <option value="sans-serif">Sans-Serif</option>
+                    <option value="monospace">Monospace</option>
+                    <option value="Arial, sans-serif">Arial</option>
+                    <option value="'Times New Roman', serif">Times New Roman</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] opacity-40 italic">Pri. Font Size</label>
+                  <input type="number" placeholder="Default" value={formData.primaryFontSize || ''} onChange={e => setFormData({ ...formData, primaryFontSize: e.target.value ? parseInt(e.target.value) : undefined })} className="w-full border-[2.5px] border-black p-1.5 font-bold text-[10px] bg-white rounded-lg outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] opacity-40 italic">Sec. Font Size</label>
+                  <input type="number" placeholder="Default" value={formData.secondaryFontSize || ''} onChange={e => setFormData({ ...formData, secondaryFontSize: e.target.value ? parseInt(e.target.value) : undefined })} className="w-full border-[2.5px] border-black p-1.5 font-bold text-[10px] bg-white rounded-lg outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] opacity-40 italic">Pri. Text Color</label>
+                  <input type="color" value={formData.primaryTextColor || formData.textColor || '#000000'} onChange={e => setFormData({ ...formData, primaryTextColor: e.target.value })} className="w-full h-8 border-[2.5px] border-black cursor-pointer rounded-lg px-1 py-0.5" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-black uppercase text-[9px] opacity-40 italic">Sec. Text Color</label>
+                  <input type="color" value={formData.secondaryTextColor || formData.textColor || '#000000'} onChange={e => setFormData({ ...formData, secondaryTextColor: e.target.value })} className="w-full h-8 border-[2.5px] border-black cursor-pointer rounded-lg px-1 py-0.5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Advanced Positioning */}
+            <div className="p-3 border-[2px] border-black rounded-xl bg-slate-50 space-y-4">
+              <h4 className="font-black uppercase text-[10px] tracking-widest opacity-60">Advanced Layout & Positioning</h4>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Body Content */}
+                <div className="space-y-1.5 p-2 bg-white border-[2px] border-black rounded-lg">
+                  <label className="font-black uppercase text-[8px] opacity-40 italic block">Body Content X/Y</label>
+                  <div className="flex gap-2">
+                    <input type="number" placeholder="X (auto)" value={formData.bodyPosition?.x ?? ''} onChange={e => setFormData({ ...formData, bodyPosition: { ...formData.bodyPosition, x: e.target.value ? parseInt(e.target.value) : undefined as any } })} className="w-1/2 border-[2px] border-black p-1 text-[10px] rounded" />
+                    <input type="number" placeholder="Y (auto)" value={formData.bodyPosition?.y ?? ''} onChange={e => setFormData({ ...formData, bodyPosition: { ...formData.bodyPosition, y: e.target.value ? parseInt(e.target.value) : undefined as any } })} className="w-1/2 border-[2px] border-black p-1 text-[10px] rounded" />
+                  </div>
+                  <label className="font-black uppercase text-[8px] opacity-40 italic block mt-2">Body Alignment</label>
+                  <select value={formData.bodyAlignment || 'center'} onChange={e => setFormData({ ...formData, bodyAlignment: e.target.value as any })} className="w-full border-[2px] border-black p-1 text-[10px] rounded">
+                    <option value="center">Center</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                  </select>
+                </div>
+
+                {/* Signature Position */}
+                <div className="space-y-1.5 p-2 bg-white border-[2px] border-black rounded-lg flex flex-col justify-between">
+                  <label className="font-black uppercase text-[8px] opacity-40 italic block">Signature Location X/Y</label>
+                  <div className="flex gap-2">
+                    <input type="number" placeholder="X" value={formData.signaturePosition?.x ?? ''} onChange={e => setFormData({ ...formData, signaturePosition: { ...formData.signaturePosition, x: e.target.value ? parseInt(e.target.value) : undefined as any } })} className="w-1/2 border-[2px] border-black p-1 text-[10px] rounded" />
+                    <input type="number" placeholder="Y" value={formData.signaturePosition?.y ?? ''} onChange={e => setFormData({ ...formData, signaturePosition: { ...formData.signaturePosition, y: e.target.value ? parseInt(e.target.value) : undefined as any } })} className="w-1/2 border-[2px] border-black p-1 text-[10px] rounded" />
+                  </div>
+                  <div className="h-4"></div>
+                </div>
+
+                {/* ID Position */}
+                <div className="space-y-1.5 p-2 bg-white border-[2px] border-black rounded-lg">
+                  <label className="font-black uppercase text-[8px] opacity-40 italic block">ID Location X/Y (Optional override)</label>
+                  <div className="flex gap-2">
+                    <input type="number" placeholder="X" value={formData.idPosition?.x ?? ''} onChange={e => setFormData({ ...formData, idPosition: { ...formData.idPosition, x: e.target.value ? parseInt(e.target.value) : undefined as any } })} className="w-1/2 border-[2px] border-black p-1 text-[10px] rounded" />
+                    <input type="number" placeholder="Y" value={formData.idPosition?.y ?? ''} onChange={e => setFormData({ ...formData, idPosition: { ...formData.idPosition, y: e.target.value ? parseInt(e.target.value) : undefined as any } })} className="w-1/2 border-[2px] border-black p-1 text-[10px] rounded" />
+                  </div>
+                </div>
+
+                {/* Date Position */}
+                <div className="space-y-1.5 p-2 bg-white border-[2px] border-black rounded-lg">
+                  <label className="font-black uppercase text-[8px] opacity-40 italic block">Date Location X/Y (Optional override)</label>
+                  <div className="flex gap-2">
+                    <input type="number" placeholder="X" value={formData.datePosition?.x ?? ''} onChange={e => setFormData({ ...formData, datePosition: { ...formData.datePosition, x: e.target.value ? parseInt(e.target.value) : undefined as any } })} className="w-1/2 border-[2px] border-black p-1 text-[10px] rounded" />
+                    <input type="number" placeholder="Y" value={formData.datePosition?.y ?? ''} onChange={e => setFormData({ ...formData, datePosition: { ...formData.datePosition, y: e.target.value ? parseInt(e.target.value) : undefined as any } })} className="w-1/2 border-[2px] border-black p-1 text-[10px] rounded" />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -3320,12 +3597,49 @@ export function AdminCertificateTemplates() {
           <div className="space-y-3">
             <h3 className="font-black uppercase text-[10px] opacity-40 italic tracking-widest">Live Preview</h3>
             {previewUrl ? (
-              <img src={previewUrl} alt="Preview" className="w-full border-[4px] border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] rounded-xl" />
+              <div className="relative group cursor-crosshair">
+                <img 
+                  src={previewUrl} 
+                  alt="Preview" 
+                  className="w-full border-[4px] border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] rounded-xl" 
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const scaleX = 1200 / rect.width;
+                    const scaleY = 850 / rect.height;
+                    const x = Math.round((e.clientX - rect.left) * scaleX);
+                    const y = Math.round((e.clientY - rect.top) * scaleY);
+                    setClickedCoords({ x, y });
+                  }}
+                />
+                <div className="absolute opacity-0 group-hover:opacity-100 top-2 left-2 bg-black text-white text-[9px] font-bold px-2 py-1 rounded-lg pointer-events-none">
+                  Click to get X/Y coords
+                </div>
+              </div>
             ) : (
               <div className="w-full aspect-[1.41] border-[4px] border-black border-dashed flex items-center justify-center bg-slate-50 opacity-50 rounded-xl">
                 <span className="font-black italic uppercase text-xs">Generating Preview...</span>
               </div>
             )}
+
+            <div className="bg-yellow-50 border-[2px] border-black p-4 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] mt-4">
+              <h4 className="font-black uppercase text-[11px] mb-1 italic">Canvas Positioning Guide</h4>
+              <p className="text-[9px] font-bold opacity-60 leading-tight mb-3">
+                The canvas is <b>1200px wide</b> by <b>850px high</b>. X goes left-to-right (0 to 1200) and Y goes top-to-bottom (0 to 850).
+              </p>
+              {clickedCoords ? (
+                <div className="bg-black text-yellow-400 font-mono text-sm font-bold p-3 rounded-lg flex items-center gap-3">
+                  <span>📍</span>
+                  <div>
+                    <div className="text-[8px] uppercase tracking-widest opacity-60 text-white">Clicked Position</div>
+                    <div>X: {clickedCoords.x} &nbsp;|&nbsp; Y: {clickedCoords.y}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white border-[2px] border-black border-dashed opacity-50 text-[10px] p-3 rounded-lg text-center font-bold">
+                  Click anywhere on the preview image above to capture exact X/Y coordinates!
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -3337,7 +3651,7 @@ export function AdminCertificateTemplates() {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-lavender underline-offset-4">Certificate Templates</h2>
         <BrutalButton color={COLORS.teal} className="px-4 py-2" onClick={openNew}>
-          <PlusCircle className="w-4 h-4" /> Create Template
+          <Plus className="w-4 h-4" /> Create Template
         </BrutalButton>
       </div>
 
@@ -3367,7 +3681,7 @@ export function AdminCertificateTemplates() {
         ))}
         {templates.length === 0 && (
           <div className="col-span-full border-[4px] border-black border-dashed p-10 text-center rounded-2xl opacity-40">
-            <Award className="w-10 h-10 mx-auto mb-2" />
+            <AwardIcon className="w-10 h-10 mx-auto mb-2" />
             <h3 className="font-black italic uppercase text-lg">No Templates Found</h3>
             <p className="font-bold text-xs uppercase">Create a template to issue certificates.</p>
           </div>

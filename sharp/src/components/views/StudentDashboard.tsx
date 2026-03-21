@@ -11,6 +11,7 @@ import { useEvents } from '@/hooks/useEvents';
 import { useRegistrations } from '@/hooks/useRegistrations';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useUIStore } from '@/stores/uiStore';
+import { useSettings } from '@/hooks/useSettings';
 import type { CampusEvent } from '@/types';
 
 export function StudentDashboard() {
@@ -19,7 +20,27 @@ export function StudentDashboard() {
   const { registrations, fetchUserRegistrations } = useRegistrations();
   const { notifications } = useNotifications(profile?.uid);
   const { setActiveTab } = useUIStore();
+  const { settings } = useSettings();
   const [upcoming, setUpcoming] = useState<CampusEvent[]>([]);
+
+  const getCategoryName = (id: string) => {
+    const found = settings?.eventCategories?.find(c => c.id === id);
+    return found ? found.name : id;
+  };
+
+  const catColor = (catId: string) => {
+    const defaultColors = [COLORS.teal, COLORS.pink, COLORS.yellow, COLORS.lavender];
+    let sum = 0;
+    for (let i = 0; i < catId.length; i++) sum += catId.charCodeAt(i);
+    return defaultColors[sum % defaultColors.length];
+  };
+
+  const getCategoryIcon = (catId: string) => {
+    const defaultIcons = ['✨', '🔥', '🎉', '💡', '🚀', '🎯'];
+    let sum = 0;
+    for (let i = 0; i < catId.length; i++) sum += catId.charCodeAt(i);
+    return defaultIcons[sum % defaultIcons.length];
+  };
 
   useEffect(() => {
     fetchPublicEvents();
@@ -207,7 +228,7 @@ export function StudentDashboard() {
                   <BrutalCard key={evt.id} className="flex items-center gap-4 p-3 border-l-[6px]" style={{ borderLeftColor: attended ? COLORS.green : COLORS.red }}>
                     <div className="flex-1">
                       <h4 className="text-[11px] font-black uppercase italic">{evt.title}</h4>
-                      <p className="text-[8px] font-bold opacity-40">{evt.category} • {evt.venueName}</p>
+                      <p className="text-[8px] font-bold opacity-40">{getCategoryName(evt.category)} • {evt.venueName}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       {evt.outcomeStatus && (
@@ -228,8 +249,7 @@ export function StudentDashboard() {
                 <Sparkles className="w-5 h-5" /> Recommended For You
               </h3>
               {recommendations.map(evt => {
-                const catColors: Record<string, string> = { technical: COLORS.teal, cultural: COLORS.pink, sports: COLORS.yellow, academic: COLORS.lavender, workshop: COLORS.teal, competition: COLORS.yellow, social: COLORS.pink, seminar: COLORS.lavender };
-                const color = catColors[evt.category] || COLORS.teal;
+                const color = catColor(evt.category);
                 return (
                   <BrutalCard key={evt.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer border-l-[6px]" style={{ borderLeftColor: color }}
                     onClick={() => setActiveTab('discover')}>
@@ -239,14 +259,14 @@ export function StudentDashboard() {
                       </div>
                     ) : (
                       <div className="w-9 h-9 rounded-lg border-[2px] border-black flex items-center justify-center shrink-0 text-md" style={{ backgroundColor: color }}>
-                        {evt.category === 'technical' ? '💻' : evt.category === 'cultural' ? '🎭' : evt.category === 'sports' ? '🏆' : evt.category === 'academic' ? '📚' : evt.category === 'workshop' ? '🔧' : '🎉'}
+                        {getCategoryIcon(evt.category)}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
                       <h4 className="text-[11px] font-black uppercase italic truncate">{evt.title}</h4>
-                      <p className="text-[8px] font-bold opacity-40">{evt.category} • {Math.max(evt.registeredCount || 0, 0)}/{evt.capacity} registered</p>
+                      <p className="text-[8px] font-bold opacity-40">{getCategoryName(evt.category)} • {Math.max(evt.registeredCount || 0, 0)}/{evt.capacity} registered</p>
                     </div>
-                    <Badge text={evt.category} color={color} />
+                    <Badge text={getCategoryName(evt.category)} color={color} />
                   </BrutalCard>
                 );
               })}
