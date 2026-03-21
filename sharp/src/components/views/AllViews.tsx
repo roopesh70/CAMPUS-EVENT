@@ -2853,47 +2853,84 @@ export function SystemSettingsPage() {
         {settingsLoading || !localSettings ? (
           <p className="text-[10px] font-bold opacity-50">Loading configuration...</p>
         ) : (
-          <div className="space-y-5 max-w-md">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-black text-sm uppercase">Registration Open</p>
-                <p className="text-[9px] font-bold opacity-50">Allow new student registrations platform-wide</p>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+              {/* Left Column: Basic Toggles & Support */}
+              <div className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-black text-sm uppercase">Registration Open</p>
+                    <p className="text-[9px] font-bold opacity-50">Allow new student registrations platform-wide</p>
+                  </div>
+                  <input type="checkbox" checked={localSettings.registrationOpen || false} onChange={e => setLocalSettings({...localSettings, registrationOpen: e.target.checked})} className="w-5 h-5 accent-yellow-400 border-[2px] border-black outline-none cursor-pointer" />
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-black text-sm uppercase">Require Event Approval</p>
+                    <p className="text-[9px] font-bold opacity-50">Admin review required for organizer events</p>
+                  </div>
+                  <input type="checkbox" checked={localSettings.requireEventApproval || false} onChange={e => setLocalSettings({...localSettings, requireEventApproval: e.target.checked})} className="w-5 h-5 accent-yellow-400 border-[2px] border-black outline-none cursor-pointer" />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-black text-sm uppercase">Maintenance Mode</p>
+                    <p className="text-[9px] font-bold opacity-50">Enable global maintenance lock (Admins only)</p>
+                  </div>
+                  <input type="checkbox" checked={localSettings.maintenanceMode || false} onChange={e => setLocalSettings({...localSettings, maintenanceMode: e.target.checked})} className="w-5 h-5 accent-red-500 border-[2px] border-black outline-none cursor-pointer" />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-black text-sm uppercase">Anonymous Feedback</p>
+                    <p className="text-[9px] font-bold opacity-50">Allow students to submit feedback without names</p>
+                  </div>
+                  <input type="checkbox" checked={localSettings.allowAnonymousFeedback || false} onChange={e => setLocalSettings({...localSettings, allowAnonymousFeedback: e.target.checked})} className="w-5 h-5 accent-yellow-400 border-[2px] border-black outline-none cursor-pointer" />
+                </div>
+
+                <div className="space-y-1.5 pt-2">
+                  <label className="font-black uppercase text-[10px] tracking-widest opacity-80 italic">Support Contact Email</label>
+                  <BrutalInput type="email" placeholder="support@campusevent.edu" value={localSettings.supportEmail || ''} onChange={e => setLocalSettings({...localSettings, supportEmail: e.target.value})} />
+                </div>
               </div>
-              <input type="checkbox" checked={localSettings.registrationOpen || false} onChange={e => setLocalSettings({...localSettings, registrationOpen: e.target.checked})} className="w-5 h-5 accent-yellow-400 border-[2px] border-black outline-none cursor-pointer" />
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-black text-sm uppercase">Require Event Approval</p>
-                <p className="text-[9px] font-bold opacity-50">Admin review required for organizer events</p>
+
+              {/* Right Column: Social Links */}
+              <div className="lg:border-l-[1.5px] lg:border-black lg:border-dashed lg:pl-8 space-y-4">
+                <h4 className="font-black uppercase text-[11px] flex items-center gap-2">
+                  <span className="w-2 h-2 bg-black rounded-full" />
+                  Social & Portal Links
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold opacity-60 uppercase">Twitter / X</label>
+                    <BrutalInput placeholder="URL" value={localSettings.twitterUrl || ''} onChange={e => setLocalSettings({...localSettings, twitterUrl: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold opacity-60 uppercase">Instagram</label>
+                    <BrutalInput placeholder="URL" value={localSettings.instagramUrl || ''} onChange={e => setLocalSettings({...localSettings, instagramUrl: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold opacity-60 uppercase">Github</label>
+                    <BrutalInput placeholder="URL" value={localSettings.githubUrl || ''} onChange={e => setLocalSettings({...localSettings, githubUrl: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold opacity-60 uppercase">YouTube</label>
+                    <BrutalInput placeholder="URL" value={localSettings.youtubeUrl || ''} onChange={e => setLocalSettings({...localSettings, youtubeUrl: e.target.value})} />
+                  </div>
+                  <div className="col-span-full space-y-1">
+                    <label className="text-[10px] font-black uppercase tracking-widest opacity-80 italic">Campus Website</label>
+                    <BrutalInput placeholder="https://..." value={localSettings.campusWebsiteUrl || ''} onChange={e => setLocalSettings({...localSettings, campusWebsiteUrl: e.target.value})} />
+                  </div>
+                </div>
               </div>
-              <input type="checkbox" checked={localSettings.requireEventApproval || false} onChange={e => setLocalSettings({...localSettings, requireEventApproval: e.target.checked})} className="w-5 h-5 accent-yellow-400 border-[2px] border-black outline-none cursor-pointer" />
             </div>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-black text-sm uppercase">Maintenance Mode</p>
-                <p className="text-[9px] font-bold opacity-50">Enable global maintenance lock (Admins only)</p>
-              </div>
-              <input type="checkbox" checked={localSettings.maintenanceMode || false} onChange={e => setLocalSettings({...localSettings, maintenanceMode: e.target.checked})} className="w-5 h-5 accent-red-500 border-[2px] border-black outline-none cursor-pointer" />
+            <div className="pt-4 border-t-[1.5px] border-black">
+              <BrutalButton color={COLORS.teal} className="w-full py-4 text-sm" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Save Global Configuration'}
+              </BrutalButton>
             </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-black text-sm uppercase">Anonymous Feedback</p>
-                <p className="text-[9px] font-bold opacity-50">Allow students to submit feedback without names</p>
-              </div>
-              <input type="checkbox" checked={localSettings.allowAnonymousFeedback || false} onChange={e => setLocalSettings({...localSettings, allowAnonymousFeedback: e.target.checked})} className="w-5 h-5 accent-yellow-400 border-[2px] border-black outline-none cursor-pointer" />
-            </div>
-
-            <div className="space-y-1.5 pt-2">
-              <label className="font-black uppercase text-[10px] tracking-widest opacity-80 italic">Support Contact Email</label>
-              <BrutalInput type="email" placeholder="support@campusevent.edu" value={localSettings.supportEmail || ''} onChange={e => setLocalSettings({...localSettings, supportEmail: e.target.value})} />
-            </div>
-
-            <BrutalButton color={COLORS.teal} className="w-full mt-4 py-3" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving...' : 'Save Configuration'}
-            </BrutalButton>
           </div>
         )}
       </BrutalCard>
@@ -2983,12 +3020,47 @@ export function SystemSettingsPage() {
 /* ===== Admin: Data Management ===== */
 export function DataManagementPage() {
   const { events, fetchAllEvents } = useEvents();
+  const { settings, saveSettings, loading: settingsLoading } = useSettings();
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState('');
   const [cleaning, setCleaning] = useState(false);
   const [cleanLog, setCleanLog] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [localLegal, setLocalLegal] = useState({
+    privacy: '',
+    cookies: '',
+    terms: ''
+  });
 
   useEffect(() => { fetchAllEvents(); }, [fetchAllEvents]);
+
+  useEffect(() => {
+    if (settings) {
+      setLocalLegal({
+        privacy: settings.privacyPolicy || '',
+        cookies: settings.cookieSettings || '',
+        terms: settings.termsOfUse || ''
+      });
+    }
+  }, [settings]);
+
+  const handleSaveLegal = async () => {
+    if (!settings) return;
+    setSaving(true);
+    try {
+      await saveSettings({
+        ...settings,
+        privacyPolicy: localLegal.privacy,
+        cookieSettings: localLegal.cookies,
+        termsOfUse: localLegal.terms
+      });
+      alert('Legal content updated successfully!');
+    } catch (err: any) {
+      alert('Failed to update legal content: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSeed = async () => {
     setSeeding(true);
@@ -3083,6 +3155,63 @@ export function DataManagementPage() {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">Data Management</h2>
+      <BrutalCard className="p-6 space-y-5 border-b-[6px]">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div>
+            <h3 className="font-black uppercase text-sm italic">Legal Content Management</h3>
+            <p className="text-[10px] font-bold opacity-60">Manage platform-wide Privacy, Cookies, and Terms of Use content.</p>
+          </div>
+          <BrutalButton 
+            color={COLORS.teal} 
+            className="px-8 py-3 text-[10px] w-full md:w-auto" 
+            onClick={handleSaveLegal} 
+            disabled={saving}
+          >
+            {saving ? 'Updating...' : 'Save Legal Content'}
+          </BrutalButton>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase opacity-60 flex items-center gap-2">
+              <span className="w-2 h-2 bg-yellow-400 rounded-full" />
+              Privacy Policy (HTML)
+            </label>
+            <textarea
+              className="w-full h-80 p-4 border-[2.5px] border-black bg-white rounded-2xl font-mono text-[10px] focus:outline-none focus:ring-2 focus:ring-yellow-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+              value={localLegal.privacy}
+              onChange={(e) => setLocalLegal({ ...localLegal, privacy: e.target.value })}
+              placeholder="<h1>Privacy Policy</h1>..."
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase opacity-60 flex items-center gap-2">
+              <span className="w-2 h-2 bg-teal-400 rounded-full" />
+              Cookie Settings (HTML)
+            </label>
+            <textarea
+              className="w-full h-80 p-4 border-[2.5px] border-black bg-white rounded-2xl font-mono text-[10px] focus:outline-none focus:ring-2 focus:ring-yellow-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+              value={localLegal.cookies}
+              onChange={(e) => setLocalLegal({ ...localLegal, cookies: e.target.value })}
+              placeholder="<h1>Cookie Settings</h1>..."
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase opacity-60 flex items-center gap-2">
+              <span className="w-2 h-2 bg-red-400 rounded-full" />
+              Terms of Use (HTML)
+            </label>
+            <textarea
+              className="w-full h-80 p-4 border-[2.5px] border-black bg-white rounded-2xl font-mono text-[10px] focus:outline-none focus:ring-2 focus:ring-yellow-400 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+              value={localLegal.terms}
+              onChange={(e) => setLocalLegal({ ...localLegal, terms: e.target.value })}
+              placeholder="<h1>Terms of Use</h1>..."
+            />
+          </div>
+        </div>
+        <p className="text-[8px] font-bold opacity-40 uppercase italic">Tip: Use HTML tags for better formatting in the footer links. Changes are live instantly after saving.</p>
+      </BrutalCard>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <BrutalCard className="p-6 border-b-[6px] space-y-4">
           <h3 className="font-black uppercase text-sm italic">Seed Database</h3>

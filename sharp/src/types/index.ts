@@ -250,4 +250,14 @@ export interface SystemSettings {
   eventCategories?: { id: string; name: string; isActive: boolean }[];
   restrictedRoles?: string[];
   updatedAt?: Timestamp;
+  // Social Links
+  twitterUrl?: string;
+  instagramUrl?: string;
+  githubUrl?: string;
+  youtubeUrl?: string;
+  campusWebsiteUrl?: string;
+  // Legal Content
+  privacyPolicy?: string;
+  cookieSettings?: string;
+  termsOfUse?: string;
 }
