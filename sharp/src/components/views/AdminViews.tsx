@@ -36,6 +36,31 @@ const notifyCompetingEvents = async (
   ));
 };
 
+export const getConflicts = (evt: CampusEvent, allEvents: CampusEvent[]) => {
+  if (evt.eventType === 'ONLINE') return { red: [], orange: [] };
+
+  const eStart = evt.startTime?.toMillis?.() || 0;
+  const eEnd = evt.endTime?.toMillis?.() || 0;
+
+  const red: string[] = [];
+  const orange: string[] = [];
+
+  for (const other of allEvents) {
+    if (other.id === evt.id) continue;
+    if (other.eventType === 'ONLINE') continue;
+    if (other.venueId !== evt.venueId) continue;
+
+    const oStart = other.startTime?.toMillis?.() || 0;
+    const oEnd = other.endTime?.toMillis?.() || 0;
+
+    if (isTimeOverlapping(eStart, eEnd, oStart, oEnd)) {
+      if (other.status === 'approved') red.push(other.title);
+      else if (other.status === 'pending') orange.push(other.title);
+    }
+  }
+  return { red, orange };
+};
+
 export function AdminDashboard() {
   const { events, fetchAllEvents } = useEvents();
   const [userCount, setUserCount] = useState(0);
@@ -166,12 +191,28 @@ function PendingRow({ event, allEvents, refresh }: { event: CampusEvent, allEven
     );
   }
 
+  const conflicts = getConflicts(event, allEvents);
+  const hasRed = conflicts.red.length > 0;
+  const hasOrange = conflicts.orange.length > 0;
+
   return (
     <tr className="border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50 transition-colors">
-      <td className="p-2.5 font-black uppercase truncate max-w-[120px]">{event.title}</td>
+      <td className="p-2.5 font-black uppercase truncate max-w-[120px]">
+        {event.title}
+        {hasRed ? (
+          <span className="ml-1 text-red-600 text-xs" title={`Cannot approve: Venue is already allotted to ${conflicts.red.join(', ')}`}>❌</span>
+        ) : hasOrange ? (
+          <span className="ml-1 text-orange-500 text-xs" title={`Warning: Event also requested by ${conflicts.orange.join(', ')}`}>⚠️</span>
+        ) : null}
+      </td>
       <td className="p-2.5 text-center"><Badge text={event.venueName || 'TBD'} color="#fff" /></td>
       <td className="p-2.5 flex gap-1.5 justify-end">
-        <button onClick={() => handleAction('approved')} className="w-7 h-7 bg-green-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all">
+        <button 
+          onClick={() => handleAction('approved')} 
+          disabled={hasRed}
+          title={hasRed ? "Blocked: conflicts with an approved event" : "Approve"}
+          className={`w-7 h-7 ${hasRed ? 'bg-slate-200 cursor-not-allowed opacity-50' : 'bg-green-400 hover:shadow-none'} border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center transition-all`}
+        >
           <Check className="w-3.5 h-3.5" />
         </button>
         <button onClick={() => handleAction('rejected')} className="w-7 h-7 bg-red-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all">
@@ -198,37 +239,11 @@ export function AdminApprovals() {
   // Derive display events based on tab
   const displayEvents = allEvents.filter(e => tab === 'pending' ? e.status === 'pending' : e.status !== 'pending' && e.status !== 'draft');
 
-  // Helper to find conflicts
-  const getConflicts = (evt: CampusEvent) => {
-    if (evt.eventType === 'ONLINE') return { red: [], orange: [] };
-
-    const eStart = evt.startTime?.toMillis?.() || 0;
-    const eEnd = evt.endTime?.toMillis?.() || 0;
-
-    const red: string[] = [];
-    const orange: string[] = [];
-
-    for (const other of allEvents) {
-      if (other.id === evt.id) continue;
-      if (other.eventType === 'ONLINE') continue;
-      if (other.venueId !== evt.venueId) continue;
-
-      const oStart = other.startTime?.toMillis?.() || 0;
-      const oEnd = other.endTime?.toMillis?.() || 0;
-
-      if (isTimeOverlapping(eStart, eEnd, oStart, oEnd)) {
-        if (other.status === 'approved') red.push(other.title);
-        else if (other.status === 'pending') orange.push(other.title);
-      }
-    }
-    return { red, orange };
-  };
-
   const handleApprove = async (evt: CampusEvent) => {
     const comment = comments[evt.id] || '';
 
     try {
-      const { red } = getConflicts(evt);
+      const { red } = getConflicts(evt, allEvents);
       if (red.length > 0) {
         alert('Cannot approve: venue is already allotted to another event.');
         return;
@@ -272,7 +287,7 @@ export function AdminApprovals() {
           </BrutalCard>
         ) : (
           displayEvents.map((evt) => {
-            const conflicts = tab === 'pending' ? getConflicts(evt) : { red: [], orange: [] };
+            const conflicts = tab === 'pending' ? getConflicts(evt, allEvents) : { red: [], orange: [] };
             return (
               <BrutalCard key={evt.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
                 {evt.posterUrl ? (
@@ -281,9 +296,9 @@ export function AdminApprovals() {
                   </div>
                 ) : (
                   <div className="w-24 h-24 bg-slate-200 border-[2px] border-black rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
-                    <span className="font-black text-3xl opacity-10">{evt.category[0].toUpperCase()}</span>
                     <span className="font-black text-3xl opacity-10">{(evt.category?.[0] || '?').toUpperCase()}</span>
                   </div>
+                )}
                 <div className="flex-1 space-y-1 w-full">
                   <div className="flex items-center gap-2">
                     <Badge text={evt.eventType || 'PHYSICAL'} color={evt.eventType === 'ONLINE' ? COLORS.lavender : COLORS.teal} />
@@ -413,7 +428,7 @@ export function AdminApprovals() {
               {/* Conflict Warnings in Modal */}
               {(() => {
                 if (selectedEvent.status !== 'pending') return null;
-                const conflicts = getConflicts(selectedEvent);
+                const conflicts = getConflicts(selectedEvent, allEvents);
                 return (
                   <div className="space-y-2">
                     {conflicts.red.length > 0 && (
@@ -449,7 +464,7 @@ export function AdminApprovals() {
                   <div className="flex gap-2 shrink-0">
                     <BrutalButton color="#4ADE80" className="px-5 py-2 text-xs opacity-90 disabled:opacity-40 disabled:pointer-events-none"
                       onClick={() => { handleApprove(selectedEvent); setSelectedEvent(null); }}
-                      disabled={getConflicts(selectedEvent).red.length > 0}>
+                      disabled={getConflicts(selectedEvent, allEvents).red.length > 0}>
                       <Check className="w-4 h-4 mr-1" /> Approve
                     </BrutalButton>
                     <BrutalButton color="#F87171" className="px-5 py-2 text-xs" onClick={() => { handleReject(selectedEvent); setSelectedEvent(null); }}>

@@ -21,9 +21,9 @@ const catColor = (cat: string) => {
 };
 
 export function CalendarView() {
-  const { events, fetchPublicEvents } = useEvents();
+  const { events, fetchPublicEvents, fetchOrganizerEvents, fetchAllEvents } = useEvents();
   const { registrations, fetchUserRegistrations } = useRegistrations();
-  const { profile, isAuthenticated } = useAuthStore();
+  const { profile, isAuthenticated, role } = useAuthStore();
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -31,8 +31,21 @@ export function CalendarView() {
   const [viewMode, setViewMode] = useState<'month' | 'list'>('month');
   const [showMine, setShowMine] = useState(false);
 
-  useEffect(() => { fetchPublicEvents(); }, [fetchPublicEvents]);
-  useEffect(() => { if (profile?.uid && showMine) fetchUserRegistrations(profile.uid); }, [profile?.uid, showMine, fetchUserRegistrations]);
+  useEffect(() => {
+    if (showMine && role === 'organizer' && profile?.uid) {
+      fetchOrganizerEvents(profile.uid);
+    } else if (showMine && role === 'admin') {
+      fetchAllEvents();
+    } else {
+      fetchPublicEvents();
+    }
+  }, [showMine, role, profile?.uid, fetchOrganizerEvents, fetchAllEvents, fetchPublicEvents]);
+
+  useEffect(() => {
+    if (profile?.uid && showMine && role !== 'organizer') {
+      fetchUserRegistrations(profile.uid);
+    }
+  }, [profile?.uid, showMine, role, fetchUserRegistrations]);
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfWeek = new Date(year, month, 1).getDay();
@@ -41,9 +54,15 @@ export function CalendarView() {
 
   const filteredEvents = useMemo(() => {
     let evts = catFilter === 'all' ? events : events.filter(e => e.category === catFilter);
-    if (showMine && isAuthenticated) evts = evts.filter(e => registeredEventIds.has(e.id));
+    if (showMine && isAuthenticated && profile) {
+      if (role === 'organizer') {
+        evts = evts.filter(e => e.organizerId === profile.uid);
+      } else if (role !== 'admin') {
+        evts = evts.filter(e => registeredEventIds.has(e.id));
+      }
+    }
     return evts;
-  }, [events, catFilter, showMine, isAuthenticated, registeredEventIds]);
+  }, [events, catFilter, showMine, isAuthenticated, registeredEventIds, role, profile]);
 
   // Map events to their day number for this month
   const eventsByDay = useMemo(() => {
@@ -75,7 +94,7 @@ export function CalendarView() {
         <div className="flex gap-2">
           {isAuthenticated && (
             <BrutalButton color={showMine ? COLORS.teal : 'white'} className="px-3 h-9 text-[8px]" onClick={() => setShowMine(!showMine)}>
-              {showMine ? 'My Events' : 'All Events'}
+              {role === 'admin' ? (showMine ? 'All Statuses' : 'Approved Only') : (showMine ? 'My Events' : 'All Events')}
             </BrutalButton>
           )}
           <BrutalButton color={viewMode === 'list' ? COLORS.yellow : 'white'} className="h-9 px-3 flex items-center gap-2 text-[8px] uppercase font-black" onClick={() => setViewMode(viewMode === 'month' ? 'list' : 'month')}>
@@ -101,56 +120,57 @@ export function CalendarView() {
       {/* Calendar Grid - Month View */}
       {viewMode === 'month' && (
         <BrutalCard className="p-0 border-[2.5px] overflow-hidden shadow-[5px_5px_0px_0px_rgba(0,0,0,1)]">
-        {/* Day Headers */}
-        <div className="grid grid-cols-7 border-b-[2.5px] border-black font-black uppercase text-[8px] bg-black text-white italic tracking-widest">
-          {DAYS.map((d) => (
-            <div key={d} className="p-3 border-r-[1px] border-white border-opacity-20 last:border-0 text-center">{d}</div>
-          ))}
-        </div>
+          {/* Day Headers */}
+          <div className="grid grid-cols-7 border-b-[2.5px] border-black font-black uppercase text-[8px] bg-black text-white italic tracking-widest">
+            {DAYS.map((d) => (
+              <div key={d} className="p-3 border-r-[1px] border-white border-opacity-20 last:border-0 text-center">{d}</div>
+            ))}
+          </div>
 
-        {/* Date Cells */}
-        <div className="grid grid-cols-7">
-          {[...Array(42)].map((_, i) => {
-            const dayNum = i - firstDayOfWeek + 1;
-            const isValidDay = dayNum >= 1 && dayNum <= daysInMonth;
-            const dayEvents = isValidDay ? (eventsByDay[dayNum] || []) : [];
-            const isToday = isValidDay && dayNum === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
-            const isSelected = isValidDay && dayNum === selectedDay;
+          {/* Date Cells */}
+          <div className="grid grid-cols-7">
+            {[...Array(42)].map((_, i) => {
+              const dayNum = i - firstDayOfWeek + 1;
+              const isValidDay = dayNum >= 1 && dayNum <= daysInMonth;
+              const dayEvents = isValidDay ? (eventsByDay[dayNum] || []) : [];
+              const isToday = isValidDay && dayNum === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
+              const isSelected = isValidDay && dayNum === selectedDay;
 
-            return (
-              <div
-                key={i}
-                onClick={() => isValidDay && setSelectedDay(dayNum === selectedDay ? null : dayNum)}
-                className={`min-h-[90px] p-2 border-r-[1px] border-b-[1px] border-black border-opacity-10 last:border-r-0 transition-colors cursor-pointer group
+              return (
+                <div
+                  key={i}
+                  onClick={() => isValidDay && setSelectedDay(dayNum === selectedDay ? null : dayNum)}
+                  className={`min-h-[90px] p-2 border-r-[1px] border-b-[1px] border-black border-opacity-10 last:border-r-0 transition-colors cursor-pointer group
                   ${isToday ? 'bg-yellow-50' : ''} ${isSelected ? 'bg-teal-50 ring-2 ring-teal-400 ring-inset' : 'hover:bg-yellow-50'}`}
-              >
-                {isValidDay && (
-                  <>
-                    <span className={`font-black text-sm leading-none transition-colors
+                >
+                  {isValidDay && (
+                    <>
+                      <span className={`font-black text-sm leading-none transition-colors
                       ${isToday ? 'bg-yellow-400 border-[2px] border-black px-1.5 py-0.5 rounded-lg' : 'group-hover:text-pink-500'}`}>
-                      {dayNum}
-                    </span>
-                    {dayEvents.slice(0, 2).map((evt) => (
-                      <div
-                        key={evt.id}
-                        className="mt-1 text-[6.5px] font-black uppercase p-1 border-[1.5px] border-black rounded-md leading-tight shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] truncate flex items-center gap-0.5"
-                        style={{ backgroundColor: catColor(evt.category) }}
-                      >
-                        {evt.outcomeStatus === 'success' && <span>✅</span>}
-                        {evt.outcomeStatus === 'failed' && <span>❌</span>}
-                        {evt.title}
-                      </div>
-                    ))}
-                    {dayEvents.length > 2 && (
-                      <span className="text-[6px] font-black uppercase opacity-40 mt-0.5 block">+{dayEvents.length - 2} more</span>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </BrutalCard>
+                        {dayNum}
+                      </span>
+                      {dayEvents.slice(0, 2).map((evt) => (
+                        <div
+                          key={evt.id}
+                          className="mt-1 text-[6.5px] font-black uppercase p-1 border-[1.5px] border-black rounded-md leading-tight shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] truncate flex items-center gap-0.5"
+                          style={{ backgroundColor: catColor(evt.category) }}
+                        >
+                          {evt.outcomeStatus === 'success' && <span>✅</span>}
+                          {evt.outcomeStatus === 'failed' && <span>❌</span>}
+                          {evt.status && evt.status !== 'approved' && <span className="opacity-60">[{evt.status.slice(0, 1)}]</span>}
+                          {evt.title}
+                        </div>
+                      ))}
+                      {dayEvents.length > 2 && (
+                        <span className="text-[6px] font-black uppercase opacity-40 mt-0.5 block">+{dayEvents.length - 2} more</span>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </BrutalCard>
       )}
 
       {/* List View */}
