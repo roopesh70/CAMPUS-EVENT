@@ -42,7 +42,7 @@ export function CalendarView() {
   }, [showMine, role, profile?.uid, fetchOrganizerEvents, fetchAllEvents, fetchPublicEvents]);
 
   useEffect(() => {
-    if (profile?.uid && showMine && role !== 'organizer') {
+    if (profile?.uid && showMine && role !== 'organizer' && role !== 'admin') {
       fetchUserRegistrations(profile.uid);
     }
   }, [profile?.uid, showMine, role, fetchUserRegistrations]);
@@ -157,7 +157,7 @@ export function CalendarView() {
                         >
                           {evt.outcomeStatus === 'success' && <span>✅</span>}
                           {evt.outcomeStatus === 'failed' && <span>❌</span>}
-                          {evt.status && evt.status !== 'approved' && <span className="opacity-60">[{evt.status.slice(0, 1)}]</span>}
+                          {evt.status && evt.status !== 'approved' && <span className="opacity-60 cursor-help" title={evt.status}>[{evt.status.slice(0, 1)}]</span>}
                           {evt.title}
                         </div>
                       ))}

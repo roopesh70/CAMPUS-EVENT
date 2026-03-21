@@ -338,7 +338,9 @@ export function AdminApprovals() {
       </div>
 
       {/* Admin Event Details Modal */}
-      {selectedEvent && (
+      {selectedEvent && (() => {
+        const conflicts = getConflicts(selectedEvent, allEvents);
+        return (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]" onClick={() => setSelectedEvent(null)}>
           <div className="bg-[#FFFBEB] border-[3px] border-black rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-[slideUp_0.3s_ease-out] flex flex-col" onClick={e => e.stopPropagation()}>
 
@@ -426,28 +428,24 @@ export function AdminApprovals() {
               )}
 
               {/* Conflict Warnings in Modal */}
-              {(() => {
-                if (selectedEvent.status !== 'pending') return null;
-                const conflicts = getConflicts(selectedEvent, allEvents);
-                return (
-                  <div className="space-y-2">
-                    {conflicts.red.length > 0 && (
-                      <div className="border-[2px] border-red-500 bg-red-100 p-3 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                        <p className="text-[11px] font-black uppercase text-red-700 italic">❌ This venue is already allotted to:</p>
-                        <p className="text-[10px] font-bold text-red-800">{conflicts.red.join(', ')}</p>
-                        <p className="text-[9px] font-bold opacity-60 mt-1">Approval is blocked until the conflict is resolved.</p>
-                      </div>
-                    )}
-                    {conflicts.red.length === 0 && conflicts.orange.length > 0 && (
-                      <div className="border-[2px] border-orange-500 bg-orange-100 p-3 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                        <p className="text-[11px] font-black uppercase text-orange-700 italic">⚠️ This venue is also requested by:</p>
-                        <p className="text-[10px] font-bold text-orange-800">{conflicts.orange.join(', ')}</p>
-                        <p className="text-[9px] font-bold opacity-60 mt-1">Only one event can be approved for this venue/time.</p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+              {selectedEvent.status === 'pending' && (
+                <div className="space-y-2">
+                  {conflicts.red.length > 0 && (
+                    <div className="border-[2px] border-red-500 bg-red-100 p-3 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                      <p className="text-[11px] font-black uppercase text-red-700 italic">❌ This venue is already allotted to:</p>
+                      <p className="text-[10px] font-bold text-red-800">{conflicts.red.join(', ')}</p>
+                      <p className="text-[9px] font-bold opacity-60 mt-1">Approval is blocked until the conflict is resolved.</p>
+                    </div>
+                  )}
+                  {conflicts.red.length === 0 && conflicts.orange.length > 0 && (
+                    <div className="border-[2px] border-orange-500 bg-orange-100 p-3 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                      <p className="text-[11px] font-black uppercase text-orange-700 italic">⚠️ This venue is also requested by:</p>
+                      <p className="text-[10px] font-bold text-orange-800">{conflicts.orange.join(', ')}</p>
+                      <p className="text-[9px] font-bold opacity-60 mt-1">Only one event can be approved for this venue/time.</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Footer / Actions - Only show action buttons if status is pending */}
@@ -464,7 +462,7 @@ export function AdminApprovals() {
                   <div className="flex gap-2 shrink-0">
                     <BrutalButton color="#4ADE80" className="px-5 py-2 text-xs opacity-90 disabled:opacity-40 disabled:pointer-events-none"
                       onClick={() => { handleApprove(selectedEvent); setSelectedEvent(null); }}
-                      disabled={getConflicts(selectedEvent, allEvents).red.length > 0}>
+                      disabled={conflicts.red.length > 0}>
                       <Check className="w-4 h-4 mr-1" /> Approve
                     </BrutalButton>
                     <BrutalButton color="#F87171" className="px-5 py-2 text-xs" onClick={() => { handleReject(selectedEvent); setSelectedEvent(null); }}>
@@ -484,7 +482,8 @@ export function AdminApprovals() {
 
           </div>
         </div>
-      )}
+        );
+      })()}
 
     </div>
   );
