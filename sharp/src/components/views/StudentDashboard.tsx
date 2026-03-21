@@ -9,19 +9,24 @@ import { COLORS } from '@/lib/constants';
 import { useAuthStore } from '@/stores/authStore';
 import { useEvents } from '@/hooks/useEvents';
 import { useRegistrations } from '@/hooks/useRegistrations';
-import { useNotifications } from '@/hooks/useNotifications';
-import { useUIStore } from '@/stores/uiStore';
 import { useSettings } from '@/hooks/useSettings';
 import type { CampusEvent } from '@/types';
+import { EventDetailModal } from '@/components/events/EventDetailModal';
+import { useUIStore } from '@/stores/uiStore';
+import { useNotifications } from '@/hooks/useNotifications';
 
 export function StudentDashboard() {
   const { profile } = useAuthStore();
   const { events, fetchPublicEvents } = useEvents();
-  const { registrations, fetchUserRegistrations } = useRegistrations();
-  const { notifications } = useNotifications(profile?.uid);
+  const { registrations, fetchUserRegistrations, registerForEvent } = useRegistrations();
+  const { notifications, createNotification } = useNotifications(profile?.uid);
   const { setActiveTab } = useUIStore();
   const { settings } = useSettings();
   const [upcoming, setUpcoming] = useState<CampusEvent[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
+  const [regId, setRegId] = useState<string | null>(null);
+  const [regLoading, setRegLoading] = useState<string | null>(null);
+  const [regSuccess, setRegSuccess] = useState<string[]>([]);
 
   const getCategoryName = (id: string) => {
     const found = settings?.eventCategories?.find(c => c.id === id);
@@ -56,6 +61,62 @@ export function StudentDashboard() {
     setUpcoming(upcomingEvents);
   }, [events]);
 
+  const handleOpenEvent = (evt: CampusEvent) => {
+    setSelectedEvent(evt);
+    const existingReg = registrations.find(r => r.eventId === evt.id && (r.status === 'confirmed' || r.status === 'waitlisted'));
+    setRegId(existingReg ? (existingReg.registrationId || existingReg.id || null) : null);
+  };
+
+  const handleRegister = async (evt: CampusEvent) => {
+    if (!profile) return;
+    setRegLoading(evt.id);
+    try {
+      const result = await registerForEvent(
+        evt.id, evt.title, profile.uid,
+        profile.name || '', profile.department || '', profile.year || null,
+        evt.capacity, Math.max(evt.registeredCount || 0, 0)
+      );
+
+      if (result.error) {
+        await createNotification(profile.uid, 'Registration Failed', result.error, 'system', evt.id);
+        return;
+      }
+
+      if (!result.duplicate) {
+        await createNotification(
+          profile.uid,
+          result.status === 'confirmed' ? 'Registration Confirmed!' : 'Added to Waitlist',
+          result.status === 'confirmed'
+            ? `You're registered for "${evt.title}". See you there!`
+            : `"${evt.title}" is full. You've been added to the waitlist.`,
+          'registration',
+          evt.id
+        );
+      }
+      setRegSuccess(prev => [...prev, evt.id]);
+      setRegId(result.registrationId || result.id || null);
+    } catch (err: any) {
+      console.error('[handleRegister] Error:', err);
+      await createNotification(profile.uid, 'Registration Error', 'An unexpected error occurred. Please try again.', 'system', evt.id);
+    } finally {
+      setRegLoading(null);
+    }
+  };
+
+  const handleShare = async (evt: CampusEvent) => {
+    const shareData = { title: evt.title, text: `Check out "${evt.title}" on SHARP!`, url: window.location.href };
+    if (navigator.share) {
+      try { await navigator.share(shareData); } catch {}
+    } else {
+      await navigator.clipboard.writeText(`${evt.title} — ${window.location.href}`);
+      alert('Link copied to clipboard!');
+    }
+  };
+
+  const isRegisteredFor = (eventId: string) => {
+    return registeredEventIds.has(eventId) || regSuccess.includes(eventId);
+  };
+
   const firstName = profile?.name?.split(' ')[0] || 'Student';
   const regCount = registrations.filter(r => r.status === 'confirmed').length;
   const attendedCount = registrations.filter(r => r.attendanceStatus === 'present').length;
@@ -75,7 +136,6 @@ export function StudentDashboard() {
   }, [events, registeredEventIds]);
 
   // Story 3 — Auto-reminder notifications for upcoming registered events
-  const { createNotification } = useNotifications(profile?.uid);
   useEffect(() => {
     if (!profile?.uid || registrations.length === 0 || events.length === 0) return;
     const now = Date.now();
@@ -191,7 +251,11 @@ export function StudentDashboard() {
               upcoming.map((event) => {
                 const d = formatDate(event.startTime);
                 return (
-                  <BrutalCard key={event.id} className="flex items-center gap-5 p-4 border-l-[8px] border-l-black group hover:bg-slate-50">
+                  <BrutalCard 
+                    key={event.id} 
+                    className="flex items-center gap-5 p-4 border-l-[8px] border-l-black group hover:bg-slate-50 cursor-pointer"
+                    onClick={() => handleOpenEvent(event)}
+                  >
                     {event.posterUrl ? (
                       <div className="w-12 h-12 shrink-0 rounded-lg overflow-hidden border-[2px] border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                         <img src={event.posterUrl} alt={event.title} className="w-full h-full object-cover" />
@@ -252,7 +316,7 @@ export function StudentDashboard() {
                 const color = catColor(evt.category);
                 return (
                   <BrutalCard key={evt.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer border-l-[6px]" style={{ borderLeftColor: color }}
-                    onClick={() => setActiveTab('discover')}>
+                    onClick={() => handleOpenEvent(evt)}>
                     {evt.posterUrl ? (
                       <div className="w-9 h-9 shrink-0 rounded-lg overflow-hidden border-[2px] border-black">
                         <img src={evt.posterUrl} alt={evt.title} className="w-full h-full object-cover" />
@@ -316,6 +380,21 @@ export function StudentDashboard() {
           </BrutalCard>
         </div>
       </div>
+
+      {/* Event Detail Modal */}
+      {selectedEvent && (
+        <EventDetailModal
+          event={selectedEvent}
+          onClose={() => { setSelectedEvent(null); setRegId(null); }}
+          isAuthenticated={true}
+          isRegistered={isRegisteredFor(selectedEvent.id)}
+          regLoading={regLoading === selectedEvent.id}
+          onRegister={handleRegister}
+          onShare={handleShare}
+          onSignInNeeded={() => setSelectedEvent(null)}
+          registrationId={regId}
+        />
+      )}
     </div>
   );
 }

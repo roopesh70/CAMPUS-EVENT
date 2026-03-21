@@ -109,7 +109,7 @@ export interface CertificateTemplate {
   name: string;
   eventType: string; // EventCategory or 'all'
   layout: 'standard' | 'modern' | 'classic' | 'minimal' | 'elegant' | 'bold';
-  
+
   // Custom Typography & Colors
   fontFamily?: string;
   primaryColor: string;
@@ -119,14 +119,14 @@ export interface CertificateTemplate {
   textColor?: string; // Legacy global text color
   primaryFontSize?: number;
   secondaryFontSize?: number;
-  
+
   // Custom Positioning
   idPosition?: { x?: number; y?: number };
   datePosition?: { x?: number; y?: number };
   signaturePosition?: { x?: number; y?: number };
   bodyPosition?: { x?: number; y?: number };
   bodyAlignment?: 'left' | 'center' | 'right';
-  
+
   borderStyle: 'solid' | 'double' | 'dashed' | 'none';
   logoUrl?: string; // Legacy single logo
   logoUrls?: string[]; // Multiple overlapping/placed logos
@@ -153,7 +153,7 @@ export interface Certificate {
   issueDate: Timestamp;
   certificateUrl: string; // Pre-rendered image URL, if stored (we use dynamic canvas, so this might be empty)
   verificationCode: string;
-  
+
   // New properties for v2 (Template-driven)
   // New properties for v2 (Template-driven)
   templateId?: string;
@@ -163,7 +163,7 @@ export interface Certificate {
   textColor?: string; // Text color override
   signatureImageUrl?: string; // Custom override
   signatureText?: string; // Custom override
-  
+
   status?: CertificateStatus; // Track if it's been revoked or user asked for a reprint
   emailSent?: boolean; // Whether the PDF attachment was emailed
   department?: string; // Stored department for rendering
@@ -251,10 +251,15 @@ export interface SystemSettings {
   restrictedRoles?: string[];
   updatedAt?: Timestamp;
   // Social Links
+  /** Full absolute URL to Twitter/X profile (e.g., https://x.com/username) */
   twitterUrl?: string;
+  /** Full absolute URL to Instagram profile (e.g., https://instagram.com/username) */
   instagramUrl?: string;
+  /** Full absolute URL to Github profile or organization (e.g., https://github.com/org) */
   githubUrl?: string;
+  /** Full absolute URL to YouTube channel (e.g., https://youtube.com/@channel) */
   youtubeUrl?: string;
+  /** Full absolute URL to the main campus website (e.g., https://campus.edu) */
   campusWebsiteUrl?: string;
   // Legal Content
   privacyPolicy?: string;

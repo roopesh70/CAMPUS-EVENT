@@ -138,16 +138,31 @@ export function MyRegistrations() {
     setCancellingId(regId);
     // Optimistic: immediately mark as cancelled in UI
     setOptimisticCancelled(prev => new Set(prev).add(regId));
-    setCancellingId(null);
-    // Fire-and-forget the actual Firestore cancel + refresh
-    cancelRegistration(regId, eventId, profile?.uid).then(result => {
+    
+    try {
+      const result = await cancelRegistration(regId, eventId, profile?.uid);
       if (result?.error) {
         console.warn('Cancel failed:', result.error);
+        alert(`Failed to cancel: ${result.error}`);
         // Revert optimistic update on failure
-        setOptimisticCancelled(prev => { const next = new Set(prev); next.delete(regId); return next; });
+        setOptimisticCancelled(prev => { 
+          const next = new Set(prev); 
+          next.delete(regId); 
+          return next; 
+        });
       }
       if (profile?.uid) fetchUserRegistrations(profile.uid);
-    });
+    } catch (err: any) {
+      console.error('Cancel error:', err);
+      alert('An unexpected error occurred while cancelling.');
+      setOptimisticCancelled(prev => { 
+        const next = new Set(prev); 
+        next.delete(regId); 
+        return next; 
+      });
+    } finally {
+      setCancellingId(null);
+    }
   };
 
   // Merge Firestore data with optimistic cancellations

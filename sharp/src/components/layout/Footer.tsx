@@ -1,14 +1,70 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Compass, Twitter, Instagram, Github, Youtube, Globe, X } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { COLORS } from '@/lib/constants';
+import DOMPurify from 'isomorphic-dompurify';
 
 export function Footer() {
   const { settings } = useSettings();
   const [activeLegal, setActiveLegal] = useState<{ title: string; html: string } | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const lastFocusedElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (activeLegal) {
+      // Store current focus
+      lastFocusedElement.current = document.activeElement as HTMLElement;
+
+      // Escape key handler
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setActiveLegal(null);
+        }
+
+        // Focus trap
+        if (e.key === 'Tab' && modalRef.current) {
+          const focusableElements = modalRef.current.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          );
+          if (focusableElements.length === 0) return;
+
+          const firstElement = focusableElements[0] as HTMLElement;
+          const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+          if (e.shiftKey) {
+            if (document.activeElement === firstElement) {
+              lastElement.focus();
+              e.preventDefault();
+            }
+          } else {
+            if (document.activeElement === lastElement) {
+              firstElement.focus();
+              e.preventDefault();
+            }
+          }
+        }
+      };
+
+      document.addEventListener('keydown', handleKeyDown);
+
+      // Focus first element in modal (X button)
+      setTimeout(() => {
+        const firstBtn = modalRef.current?.querySelector('button');
+        if (firstBtn) firstBtn.focus();
+      }, 50);
+
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+        // Restore focus
+        if (lastFocusedElement.current) {
+          lastFocusedElement.current.focus();
+        }
+      };
+    }
+  }, [activeLegal]);
 
   const socialLinks = [
     { Icon: Twitter, url: settings?.twitterUrl, label: 'Twitter' },
@@ -23,6 +79,9 @@ export function Footer() {
     { id: 'cookies', label: 'Cookies Settings', content: settings?.cookieSettings },
     { id: 'terms', label: 'Terms of Use', content: settings?.termsOfUse },
   ];
+
+  const currentYear = new Date().getFullYear();
+  const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0';
 
   return (
     <footer className="bg-black text-white p-8 md:p-10 rounded-t-[2rem] mt-12 border-t-[3px] border-black relative overflow-hidden">
@@ -43,7 +102,7 @@ export function Footer() {
               <button
                 key={item.id}
                 onClick={() => setActiveLegal({ title: item.label, html: item.content || '' })}
-                className="text-left hover:text-yellow-400 hover:tracking-wide transition-all w-fit"
+                className="text-left hover:text-yellow-400 hover:tracking-wide transition-all w-fit font-black"
               >
                 {item.label}
               </button>
@@ -60,6 +119,7 @@ export function Footer() {
             <input
               type="email"
               placeholder="Email address..."
+              aria-label="Email address for newsletter"
               className="flex-1 bg-white/5 border-[2px] border-white/20 p-2.5 rounded-xl text-white font-bold text-[10px] outline-none focus:border-yellow-400 transition-all placeholder:opacity-30"
             />
             <button className="bg-yellow-400 text-black border-[2px] border-black px-5 py-2.5 rounded-xl font-black uppercase text-[9px] shadow-[3px_3px_0px_0px_white] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all">
@@ -71,20 +131,29 @@ export function Footer() {
         {/* Connect */}
         <div className="space-y-4 md:text-right">
           <h3 className="text-xs font-black uppercase tracking-widest text-teal-400">Connect</h3>
-          <div className="flex md:justify-end gap-3">
+          <div className="flex md:justify-end gap-3 flex-wrap">
             {socialLinks.map(({ Icon, url, label }) => (
-              <a
-                key={label}
-                href={url || '#'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`w-9 h-9 border-[2px] border-white/20 rounded-xl flex items-center justify-center transition-all ${
-                  url ? 'hover:bg-white hover:text-black hover:scale-110' : 'opacity-20 cursor-not-allowed'
-                }`}
-                title={label}
-              >
-                <Icon className="w-4 h-4" />
-              </a>
+              url ? (
+                <a
+                  key={label}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 border-[2px] border-white/20 rounded-xl flex items-center justify-center transition-all hover:bg-white hover:text-black hover:scale-110"
+                  title={label}
+                >
+                  <Icon className="w-4 h-4" />
+                </a>
+              ) : (
+                <span
+                  key={label}
+                  className="w-9 h-9 border-[2px] border-white/20 rounded-xl flex items-center justify-center opacity-20"
+                  title={`${label} (unavailable)`}
+                  aria-hidden="true"
+                >
+                  <Icon className="w-4 h-4" />
+                </span>
+              )
             ))}
           </div>
           <div className="pt-2">
@@ -98,21 +167,29 @@ export function Footer() {
 
       <div className="border-t border-white/10 mt-10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
         <p className="text-[9px] font-bold uppercase opacity-30 italic">
-          © Sharp Campus 2026. Experience the Edge.
+          © Sharp Campus {currentYear}. Experience the Edge.
         </p>
         <div className="flex gap-6 opacity-30 text-[8px] font-black uppercase">
-          <span>v1.0.4-beta</span>
+          <span>v{APP_VERSION}</span>
           <span>Made for Excellence</span>
         </div>
       </div>
 
       {/* Legal Content Modal */}
       {activeLegal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white text-black w-full max-w-2xl max-h-full overflow-hidden flex flex-col border-[4px] border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] rounded-3xl">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-title"
+        >
+          <div
+            ref={modalRef}
+            className="bg-white text-black w-full max-w-2xl max-h-full overflow-hidden flex flex-col border-[4px] border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] rounded-3xl"
+          >
             <div className="p-6 border-b-[3px] border-black flex items-center justify-between bg-yellow-400">
-              <h2 className="text-xl font-black uppercase italic">{activeLegal.title}</h2>
-              <button 
+              <h2 id="modal-title" className="text-xl font-black uppercase italic">{activeLegal.title}</h2>
+              <button
                 onClick={() => setActiveLegal(null)}
                 className="w-10 h-10 border-[3px] border-black rounded-xl bg-white flex items-center justify-center hover:bg-red-400 transition-colors shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]"
               >
@@ -120,7 +197,8 @@ export function Footer() {
               </button>
             </div>
             <div className="p-8 overflow-y-auto font-bold max-w-none scroll-smooth custom-scrollbar">
-              <div dangerouslySetInnerHTML={{ __html: activeLegal.html || 'No content available.' }} />
+              {/* Sanitizing HTML content to prevent XSS from administrator-managed legal strings */}
+              <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(activeLegal.html || 'No content available.') }} />
             </div>
             <div className="p-4 bg-gray-50 border-t-[3px] border-black text-center">
               <BrutalButton color={COLORS.yellow} className="px-10 py-2" onClick={() => setActiveLegal(null)}>Close Content</BrutalButton>

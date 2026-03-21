@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useSettings } from '@/hooks/useSettings';
 import type { CampusEvent } from '@/types';
+import { EventDetailModal } from '@/components/events/EventDetailModal';
 
 export function ExploreEvents() {
   const { events, fetchPublicEvents } = useEvents();
@@ -60,7 +61,7 @@ export function ExploreEvents() {
 
   const categories = [
     { id: 'all', name: 'All' },
-    ...(settings?.eventCategories || [
+    ...((settings?.eventCategories?.length ? settings.eventCategories : null) ?? [
       { id: 'technical', name: 'Technical' },
       { id: 'cultural', name: 'Cultural' },
       { id: 'sports', name: 'Sports' }
@@ -109,42 +110,49 @@ export function ExploreEvents() {
       return;
     }
     setRegLoading(evt.id);
-    const result = await registerForEvent(
-      evt.id, evt.title, profile.uid,
-      profile.name || '', profile.department || '', profile.year || null,
-      evt.capacity, Math.max(evt.registeredCount || 0, 0)
-    );
-    setRegLoading(null);
+    try {
+      const result = await registerForEvent(
+        evt.id, evt.title, profile.uid,
+        profile.name || '', profile.department || '', profile.year || null,
+        evt.capacity, Math.max(evt.registeredCount || 0, 0)
+      );
 
-    if (result.error) {
-      console.error('[Registration block]', result.error);
-      await createNotification(profile.uid, 'Registration Failed', result.error, 'system', evt.id);
-      return;
-    }
+      if (result.error) {
+        console.error('[Registration block]', result.error);
+        await createNotification(profile.uid, 'Registration Failed', result.error, 'system', evt.id);
+        return;
+      }
 
-    // If server returned duplicate flag, just mark as registered without creating another notification
-    if (result.duplicate) {
+      // If server returned duplicate flag, just mark as registered without creating another notification
+      if (result.duplicate) {
+        setRegSuccess(prev => [...prev, evt.id]);
+        setRegId(result.registrationId || result.id || null);
+        return;
+      }
+      await createNotification(
+        profile.uid,
+        result.status === 'confirmed' ? 'Registration Confirmed!' : 'Added to Waitlist',
+        result.status === 'confirmed'
+          ? `You're registered for "${evt.title}". See you there!`
+          : `"${evt.title}" is full. You've been added to the waitlist.`,
+        'registration',
+        evt.id
+      );
       setRegSuccess(prev => [...prev, evt.id]);
       setRegId(result.registrationId || result.id || null);
-      return;
+    } catch (err: any) {
+      console.error('[handleRegister Error]', err);
+      // Fail gracefully: notify user and log
+      await createNotification(profile.uid, 'Registration Error', 'An unexpected error occurred. Please try again.', 'system', evt.id);
+    } finally {
+      setRegLoading(null);
     }
-    await createNotification(
-      profile.uid,
-      result.status === 'confirmed' ? 'Registration Confirmed!' : 'Added to Waitlist',
-      result.status === 'confirmed'
-        ? `You're registered for "${evt.title}". See you there!`
-        : `"${evt.title}" is full. You've been added to the waitlist.`,
-      'registration',
-      evt.id
-    );
-    setRegSuccess(prev => [...prev, evt.id]);
-    setRegId(result.registrationId || result.id || null);
   };
 
   const handleShare = async (evt: CampusEvent) => {
     const shareData = { title: evt.title, text: `Check out "${evt.title}" on SHARP!`, url: window.location.href };
     if (navigator.share) {
-      try { await navigator.share(shareData); } catch {}
+      try { await navigator.share(shareData); } catch { }
     } else {
       await navigator.clipboard.writeText(`${evt.title} — ${window.location.href}`);
       alert('Link copied to clipboard!');
@@ -291,186 +299,17 @@ export function ExploreEvents() {
 
       {/* Event Detail Modal */}
       {selectedEvent && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]" onClick={() => { setSelectedEvent(null); setRegId(null); }}>
-          <div className="bg-[#FFFBEB] border-[3px] border-black rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full max-h-[85vh] overflow-y-auto animate-[slideUp_0.3s_ease-out]" onClick={e => e.stopPropagation()}>
-            {/* Poster Banner */}
-            {selectedEvent.posterUrl && (
-              <img src={selectedEvent.posterUrl} alt="Event poster" className="w-full max-h-52 object-cover rounded-t-2xl border-b-[2.5px] border-black" />
-            )}
-
-            {/* Header */}
-            <div className="border-b-[2.5px] border-black p-5 flex justify-between items-start bg-slate-50">
-              <div>
-                <div className="flex gap-2 mb-2">
-                  <Badge text={getCategoryName(selectedEvent.category)} color={catColor(selectedEvent.category)} />
-                  <Badge text={selectedEvent.status} color={selectedEvent.status === 'approved' ? COLORS.green : COLORS.yellow} />
-                  {getCountdown(selectedEvent) && (
-                    <span className="flex items-center gap-1 bg-orange-100 border-[1.5px] border-orange-400 rounded-lg px-2 py-0.5">
-                      <Timer className="w-3 h-3" />
-                      <span className="text-[8px] font-black">{getCountdown(selectedEvent)}</span>
-                    </span>
-                  )}
-                </div>
-                <h3 className="text-xl font-black uppercase italic">{selectedEvent.title}</h3>
-              </div>
-              <button onClick={() => { setSelectedEvent(null); setRegId(null); }} className="w-8 h-8 border-[2px] border-black rounded-lg bg-white flex items-center justify-center hover:bg-red-100 transition-colors">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-5 space-y-4">
-              {/* Info Grid */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-center gap-2 bg-white border-[2px] border-black rounded-xl p-3">
-                  <Clock className="w-4 h-4 opacity-40" />
-                  <div>
-                    <span className="text-[7px] font-black uppercase opacity-40 block">Date & Time</span>
-                    <span className="text-[10px] font-black">{formatDate(selectedEvent)}</span>
-                    <span className="text-[8px] font-bold opacity-50 block">{formatTime(selectedEvent)}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 bg-white border-[2px] border-black rounded-xl p-3">
-                  <MapPin className="w-4 h-4 opacity-40" />
-                  <div>
-                    <span className="text-[7px] font-black uppercase opacity-40 block">Venue</span>
-                    <span className="text-[10px] font-black">{selectedEvent.venueName || 'TBD'}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 bg-white border-[2px] border-black rounded-xl p-3">
-                  <Users className="w-4 h-4 opacity-40" />
-                  <div>
-                    <span className="text-[7px] font-black uppercase opacity-40 block">Capacity</span>
-                    <span className="text-[10px] font-black">{Math.max(selectedEvent.registeredCount || 0, 0)} / {selectedEvent.capacity}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 bg-white border-[2px] border-black rounded-xl p-3">
-                  <Users className="w-4 h-4 opacity-40" />
-                  <div>
-                    <span className="text-[7px] font-black uppercase opacity-40 block">Organizer</span>
-                    <span className="text-[10px] font-black">{selectedEvent.organizerName || 'Unknown'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">About this event</h4>
-                <p className="text-[11px] font-bold leading-relaxed opacity-70 whitespace-pre-wrap">{selectedEvent.description || 'No description provided.'}</p>
-              </div>
-
-              {/* Target Audience */}
-              {selectedEvent.targetAudience && (
-                <div>
-                  <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Target Audience</h4>
-                  <p className="text-[11px] font-bold leading-relaxed opacity-70">{selectedEvent.targetAudience}</p>
-                </div>
-              )}
-
-              {/* Co-Organizers */}
-              {selectedEvent.coOrganizers && (
-                <div>
-                  <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Co-Organizers</h4>
-                  <p className="text-[11px] font-bold leading-relaxed opacity-70">{selectedEvent.coOrganizers}</p>
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-6">
-                {/* Department */}
-                {selectedEvent.department && (
-                  <div>
-                    <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Department</h4>
-                    <Badge text={selectedEvent.department} color={COLORS.lavender} />
-                  </div>
-                )}
-
-                {/* Eligibility */}
-                {(selectedEvent.eligibility?.departments?.length > 0 || selectedEvent.eligibility?.years?.length > 0) && (
-                  <div>
-                    <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Eligibility</h4>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedEvent.eligibility?.departments?.map((dep, i) => (
-                        <Badge key={`dep-${i}`} text={dep} color={COLORS.lavender} />
-                      ))}
-                      {selectedEvent.eligibility?.years?.map((year, i) => (
-                        <Badge key={`year-${i}`} text={`Year ${year}`} color={COLORS.pink} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Resources */}
-              {selectedEvent.resources && selectedEvent.resources.length > 0 && (
-                <div>
-                  <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-1">Resources</h4>
-                  <div className="flex flex-wrap gap-1.5">{selectedEvent.resources.map((r, i) => <Badge key={`res-${i}`} text={r} color="white" />)}</div>
-                </div>
-              )}
-
-              {/* Contact Info */}
-              {(selectedEvent.contactEmail || selectedEvent.contactPhone) && (
-                <div className="bg-white border-[2px] border-black rounded-xl p-3">
-                  <h4 className="text-[9px] font-black uppercase italic opacity-40 mb-2">Contact / Support</h4>
-                  <div className="flex flex-col gap-1.5 text-[10px] font-black">
-                    {selectedEvent.contactEmail && (
-                      <a href={`mailto:${selectedEvent.contactEmail}`} className="flex items-center gap-2 hover:underline decoration-2 underline-offset-2 w-fit">
-                        <span className="w-5 h-5 bg-teal-100 rounded flex items-center justify-center border-[1.5px] border-black"><Mail className="w-2.5 h-2.5" /></span> {selectedEvent.contactEmail}
-                      </a>
-                    )}
-                    {selectedEvent.contactPhone && (
-                      <a href={`tel:${selectedEvent.contactPhone}`} className="flex items-center gap-2 hover:underline decoration-2 underline-offset-2 w-fit">
-                        <span className="w-5 h-5 bg-yellow-100 rounded flex items-center justify-center border-[1.5px] border-black"><Phone className="w-2.5 h-2.5" /></span> {selectedEvent.contactPhone}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Registration Deadline */}
-              {selectedEvent.registrationDeadline?.toDate && (
-                <div className={`flex items-center gap-2 p-2 rounded-lg border-[1.5px] ${isPastDeadline(selectedEvent) ? 'border-red-400 bg-red-50' : 'border-teal-400 bg-teal-50'}`}>
-                  <Timer className="w-3.5 h-3.5" />
-                  <span className="text-[9px] font-black uppercase italic">
-                    {isPastDeadline(selectedEvent) ? '⛔ Registration Closed' : `Deadline: ${selectedEvent.registrationDeadline.toDate().toLocaleDateString()}`}
-                  </span>
-                </div>
-              )}
-
-              {/* Register Button */}
-              {isAuthenticated && selectedEvent.status === 'approved' && !isRegisteredFor(selectedEvent.id) && !isPastDeadline(selectedEvent) && !isPastEvent(selectedEvent) ? (
-                <BrutalButton className="w-full py-3 text-sm" color={COLORS.teal} disabled={regLoading === selectedEvent.id} onClick={() => handleRegister(selectedEvent)}>
-                  {regLoading === selectedEvent.id ? 'Registering...' : `Register Now (${Math.max(selectedEvent.registeredCount || 0, 0)}/${selectedEvent.capacity})`}
-                </BrutalButton>
-              ) : isRegisteredFor(selectedEvent.id) ? (
-                <div className="space-y-2">
-                  <BrutalButton className="w-full py-3 text-sm" color={COLORS.green} disabled>✓ You're Registered!</BrutalButton>
-                  {regId && (
-                    <div className="text-center p-2 bg-green-50 border-[2px] border-green-500 rounded-xl">
-                      <span className="text-[8px] font-black uppercase block opacity-40">Registration ID</span>
-                      <span className="text-sm font-black font-mono">{regId}</span>
-                    </div>
-                  )}
-                </div>
-              ) : isPastEvent(selectedEvent) ? (
-                <BrutalButton className="w-full py-3 text-sm" color="#e5e7eb" disabled>⏰ Event Has Ended</BrutalButton>
-              ) : isPastDeadline(selectedEvent) ? (
-                <BrutalButton className="w-full py-3 text-sm" color="#e5e7eb" disabled>Registration Closed</BrutalButton>
-              ) : !isAuthenticated ? (
-                <div className="bg-slate-50 border-[2.5px] border-black p-4 rounded-xl text-center space-y-3">
-                  <p className="text-xs font-bold italic opacity-60">Log in to register and save your spot</p>
-                  <BrutalButton className="w-full py-3 text-sm" color={COLORS.yellow} onClick={() => { setSelectedEvent(null); setActiveTab('auth'); }}>Sign In to Register</BrutalButton>
-                </div>
-              ) : null}
-
-              {/* Share Button */}
-              <button onClick={() => handleShare(selectedEvent)}
-                className="w-full flex items-center justify-center gap-2 border-[2px] border-black px-4 py-2 font-black uppercase text-[9px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic bg-white">
-                <Share2 className="w-3.5 h-3.5" /> Share Event
-              </button>
-            </div>
-          </div>
-        </div>
+        <EventDetailModal
+          event={selectedEvent}
+          onClose={() => { setSelectedEvent(null); setRegId(null); }}
+          isAuthenticated={isAuthenticated}
+          isRegistered={isRegisteredFor(selectedEvent.id)}
+          regLoading={regLoading === selectedEvent.id}
+          onRegister={handleRegister}
+          onShare={handleShare}
+          onSignInNeeded={() => { setSelectedEvent(null); setActiveTab('auth'); }}
+          registrationId={regId}
+        />
       )}
     </div>
   );

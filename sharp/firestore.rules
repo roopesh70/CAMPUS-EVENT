@@ -40,6 +40,10 @@ service cloud.firestore {
           // Organizers cannot self-approve by writing status=approved.
           && !(request.resource.data.status == 'approved' && resource.data.status != 'approved')
         )
+        || (
+          // Allow anyone to update registration/attendance counts if that's all they are changing
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['registeredCount', 'attendanceCount'])
+        )
       );
     }
 

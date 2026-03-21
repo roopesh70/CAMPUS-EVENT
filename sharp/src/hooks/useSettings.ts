@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { getDocument, updateDocument, addDocument, mergeDocument, listenToDoc } from '@/lib/firestore';
 import type { SystemSettings } from '@/types';
 import { Timestamp, serverTimestamp } from 'firebase/firestore';
+import DOMPurify from 'isomorphic-dompurify';
 
 const DEFAULT_SETTINGS: Omit<SystemSettings, 'id'> = {
   registrationOpen: true,
@@ -105,8 +106,14 @@ export function useSettings() {
 
   const saveSettings = useCallback(async (updates: Partial<SystemSettings>) => {
     try {
+      // Sanitize legal content before persisting to Firestore to prevent XSS
+      const cleanUpdates = { ...updates };
+      if (cleanUpdates.privacyPolicy) cleanUpdates.privacyPolicy = DOMPurify.sanitize(cleanUpdates.privacyPolicy);
+      if (cleanUpdates.cookieSettings) cleanUpdates.cookieSettings = DOMPurify.sanitize(cleanUpdates.cookieSettings);
+      if (cleanUpdates.termsOfUse) cleanUpdates.termsOfUse = DOMPurify.sanitize(cleanUpdates.termsOfUse);
+
       // Use mergeDocument to handle creation if it doesn't exist
-      await mergeDocument('settings', 'global', updates);
+      await mergeDocument('settings', 'global', cleanUpdates);
       // State updates automatically via listenToDoc onSnapshot
     } catch (err: any) {
       console.error('Failed to update settings:', err);
