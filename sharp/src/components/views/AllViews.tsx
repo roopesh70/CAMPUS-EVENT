@@ -914,6 +914,7 @@ export function OrganizerMyEvents() {
   const [tab, setTab] = useState('all');
   const [editingEvent, setEditingEvent] = useState<CampusEvent | null>(null);
   const [editForm, setEditForm] = useState<Partial<CampusEvent>>({});
+  const [editError, setEditError] = useState<string | null>(null);
   
   // Date/Time States
   const [date, setDate] = useState('');
@@ -979,13 +980,23 @@ export function OrganizerMyEvents() {
       payload.registrationDeadline = Timestamp.fromDate(new Date(`${regDeadline}T23:59`));
     }
 
-    await updateEvent(editingEvent.id, payload);
-    await logActivity(profile.uid, profile.name, 'organizer', 'update_event', editingEvent.id, 'event', editForm.title || editingEvent.title);
-    
-    setEditingEvent(null);
-    setEditForm({});
-    setSaving(false);
-    fetchOrganizerEvents(profile.uid);
+    try {
+      await updateEvent(editingEvent.id, payload);
+      await logActivity(profile.uid, profile.name, 'organizer', 'update_event', editingEvent.id, 'event', editForm.title || editingEvent.title);
+      
+      setEditingEvent(null);
+      setEditForm({});
+      setSaving(false);
+      setEditError(null);
+      fetchOrganizerEvents(profile.uid);
+    } catch (error: any) {
+      setSaving(false);
+      if (error.message === "Venue already booked for this time slot") {
+        setEditError("❌ This venue is already booked for the selected time.");
+      } else {
+        setEditError(error.message || "Failed to update event");
+      }
+    }
   };
 
   const handlePosterSelect = (file: File) => {
@@ -997,11 +1008,13 @@ export function OrganizerMyEvents() {
 
   const openEdit = (evt: CampusEvent) => {
     setEditingEvent(evt);
+    setEditError(null);
     setEditForm({
       title: evt.title,
       description: evt.description,
       capacity: evt.capacity,
       venueId: evt.venueId,
+      eventType: evt.eventType || 'PHYSICAL',
       category: evt.category,
       department: evt.department,
       targetAudience: evt.targetAudience,
@@ -1097,9 +1110,28 @@ export function OrganizerMyEvents() {
             </div>
             
             <div className="p-6 overflow-y-auto space-y-5">
+              {editError && (
+                <div className="border-[2.5px] border-red-600 rounded-xl p-4 bg-red-100 space-y-2 mb-4">
+                  <p className="text-[12px] font-black uppercase italic text-red-700">{editError}</p>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Title</label>
                 <BrutalInput value={editForm.title || ''} onChange={e => setEditForm({...editForm, title: e.target.value})} />
+              </div>
+              
+              <div className="space-y-1.5">
+                <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Event Type</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" value="PHYSICAL" checked={editForm.eventType === 'PHYSICAL' || !editForm.eventType} onChange={() => setEditForm({...editForm, eventType: 'PHYSICAL'})} className="accent-yellow-400 w-4 h-4" />
+                    <span className="font-black text-sm">PHYSICAL</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" value="ONLINE" checked={editForm.eventType === 'ONLINE'} onChange={() => { setEditForm({...editForm, eventType: 'ONLINE', venueId: ''}); }} className="accent-yellow-400 w-4 h-4" />
+                    <span className="font-black text-sm">ONLINE</span>
+                  </label>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1117,10 +1149,11 @@ export function OrganizerMyEvents() {
                     <option value="seminar">Seminar</option>
                   </select>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Venue</label>
-                  <select value={editForm.venueId || ''} onChange={e => setEditForm({...editForm, venueId: e.target.value})}
+                <div className={`space-y-1.5 ${editForm.eventType === 'ONLINE' ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Venue {editForm.eventType === 'ONLINE' && '(Not required)'}</label>
+                  <select value={editForm.venueId || ''} onChange={e => setEditForm({...editForm, venueId: e.target.value})} disabled={editForm.eventType === 'ONLINE'}
                     className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
+                    <option value="">Select Venue...</option>
                     {venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select>
                 </div>

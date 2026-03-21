@@ -129,6 +129,8 @@ export function CreateEventFlow() {
   const [alternatives, setAlternatives] = useState<string[]>([]);
 
   // Form state — PRD 5.2.1 complete
+  const [eventType, setEventType] = useState<'PHYSICAL' | 'ONLINE'>('PHYSICAL');
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<EventCategory>('technical');
   const [department, setDepartment] = useState(profile?.department || '');
@@ -167,6 +169,7 @@ export function CreateEventFlow() {
 
   // Conflict detection + suggested alternatives
   const checkConflicts = () => {
+    if (eventType === 'ONLINE') return null; // ONLINE events bypass conflict checks
     if (!venueId || !date || !startTime || !endTime) return null;
     const newStart = new Date(`${date}T${startTime}`).getTime();
     const newEnd = new Date(`${date}T${endTime}`).getTime();
@@ -179,9 +182,11 @@ export function CreateEventFlow() {
       const eStart = evt.startTime?.toDate?.().getTime() || 0;
       const eEnd = evt.endTime?.toDate?.().getTime() || 0;
       if (newStart < eEnd && newEnd > eStart) {
-        busyVenueIds.add(evt.venueId);
-        if (evt.venueId === venueId) {
-          conflictMsg = `Conflicts with "${evt.title}" at the same venue`;
+        if (evt.venueId) {
+          busyVenueIds.add(evt.venueId);
+          if (evt.venueId === venueId) {
+            conflictMsg = `Conflicts with "${evt.title}" at the same venue`;
+          }
         }
       }
     }
@@ -218,40 +223,51 @@ export function CreateEventFlow() {
     const startTs = Timestamp.fromDate(new Date(`${date}T${startTime || '09:00'}`));
     const endTs = Timestamp.fromDate(new Date(`${date}T${endTime || '17:00'}`));
 
-    const newEventId = await createEvent({
-      title,
-      description,
-      category,
-      organizerId: profile.uid,
-      organizerName: profile.name || profile.email,
-      venueId,
-      venueName,
-      department,
-      startTime: startTs,
-      endTime: endTs,
-      capacity: parseInt(capacity) || 100,
-      status: 'pending',
-      outcomeStatus: null,
-      eligibility: { departments: eligDepts, years: eligYears },
-      resources,
-      posterUrl,
-      approvalComment: '',
-      // PRD 5.2.1 new fields
-      targetAudience,
-      expectedAttendance: parseInt(expectedAttendance) || 0,
-      coOrganizers,
-      contactEmail,
-      contactPhone,
-      budget,
-      ...(regDeadline ? { registrationDeadline: Timestamp.fromDate(new Date(`${regDeadline}T23:59`)) } : {}),
-    });
+    try {
+      const newEventId = await createEvent({
+        title,
+        description,
+        category,
+        eventType,
+        organizerId: profile.uid,
+        organizerName: profile.name || profile.email,
+        venueId: eventType === 'ONLINE' ? '' : venueId,
+        venueName: eventType === 'ONLINE' ? 'Online' : venueName,
+        department,
+        startTime: startTs,
+        endTime: endTs,
+        capacity: parseInt(capacity) || 100,
+        status: 'pending',
+        outcomeStatus: null,
+        eligibility: { departments: eligDepts, years: eligYears },
+        resources,
+        posterUrl,
+        approvalComment: '',
+        // PRD 5.2.1 new fields
+        targetAudience,
+        expectedAttendance: parseInt(expectedAttendance) || 0,
+        coOrganizers,
+        contactEmail,
+        contactPhone,
+        budget,
+        ...(regDeadline ? { registrationDeadline: Timestamp.fromDate(new Date(`${regDeadline}T23:59`)) } : {}),
+      });
 
-    if (profile) {
-      await logActivity(profile.uid, profile.name, 'organizer', 'create_event', newEventId, 'event', title);
+      if (profile) {
+        await logActivity(profile.uid, profile.name, 'organizer', 'create_event', newEventId, 'event', title);
+      }
+
+      setSubmitting(false);
+      setSuccess(true);
+      setSubmitError(null);
+    } catch (error: any) {
+      setSubmitting(false);
+      if (error.message === "Venue already booked for this time slot") {
+        setSubmitError("❌ This venue is already booked for the selected time.");
+      } else {
+        setSubmitError(error.message || "Failed to create event");
+      }
     }
-
-    setSubmitting(false);
-    setSuccess(true);
   };
 
   if (success) {
@@ -262,7 +278,7 @@ export function CreateEventFlow() {
         </div>
         <h2 className="text-2xl font-black uppercase italic">Event Submitted!</h2>
         <p className="text-[11px] font-bold opacity-60">Your event has been submitted for admin approval.</p>
-        <BrutalButton color={COLORS.yellow} onClick={() => { setSuccess(false); setStep(1); setTitle(''); setDescription(''); setPosterFile(null); setPosterPreview(''); }}>
+        <BrutalButton color={COLORS.yellow} onClick={() => { setSuccess(false); setStep(1); setTitle(''); setDescription(''); setPosterFile(null); setPosterPreview(''); setEventType('PHYSICAL'); setSubmitError(null); }}>
           Create Another
         </BrutalButton>
       </div>
@@ -292,6 +308,19 @@ export function CreateEventFlow() {
             <div className="space-y-1.5">
               <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Title</label>
               <BrutalInput placeholder="e.g. Winter Code Sprint" value={title} onChange={e => setTitle(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Event Type</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="PHYSICAL" checked={eventType === 'PHYSICAL'} onChange={() => setEventType('PHYSICAL')} className="accent-yellow-400 w-4 h-4" />
+                  <span className="font-black text-sm">PHYSICAL</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="ONLINE" checked={eventType === 'ONLINE'} onChange={() => { setEventType('ONLINE'); setVenueId(''); setVenueName(''); }} className="accent-yellow-400 w-4 h-4" />
+                  <span className="font-black text-sm">ONLINE</span>
+                </label>
+              </div>
             </div>
             <div className="space-y-1.5">
               <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Category</label>
@@ -327,9 +356,10 @@ export function CreateEventFlow() {
         {/* Step 2: Venue & Time */}
         {step === 2 && (
           <div className="grid grid-cols-1 gap-5 mt-2">
-            <div className="space-y-1.5">
-              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Venue</label>
+            <div className={`space-y-1.5 ${eventType === 'ONLINE' ? 'opacity-50 pointer-events-none' : ''}`}>
+              <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Venue {eventType === 'ONLINE' && '(Not required)'}</label>
               <select value={venueId} onChange={e => { setVenueId(e.target.value); setVenueName(venues.find(v => v.id === e.target.value)?.name || ''); }}
+                disabled={eventType === 'ONLINE'}
                 className="w-full border-[2.5px] border-black p-2.5 font-bold text-xs bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rounded-xl outline-none italic">
                 <option value="">Select Venue...</option>
                 {venues.map(v => <option key={v.id} value={v.id}>{v.name} (cap: {v.capacity})</option>)}
@@ -471,6 +501,11 @@ export function CreateEventFlow() {
         {/* Step 5: Review & Submit */}
         {step === 5 && (
           <div className="mt-2 space-y-4">
+            {submitError && (
+              <div className="border-[2.5px] border-red-600 rounded-xl p-4 bg-red-100 space-y-2">
+                <p className="text-[12px] font-black uppercase italic text-red-700">{submitError}</p>
+              </div>
+            )}
             {conflict && (
               <div className="border-[2.5px] border-red-600 rounded-xl p-4 bg-red-50 space-y-2">
                 <p className="text-[10px] font-black uppercase italic text-red-700">⚠ Scheduling Conflict: {conflict}</p>
@@ -494,9 +529,10 @@ export function CreateEventFlow() {
             <div className="grid grid-cols-2 gap-3">
               {[
                 { l: 'Title', v: title || '—' },
+                { l: 'Type', v: eventType },
                 { l: 'Category', v: category },
                 { l: 'Department', v: department || '—' },
-                { l: 'Venue', v: venueName || '—' },
+                { l: 'Venue', v: eventType === 'ONLINE' ? 'ONLINE' : (venueName || '—') },
                 { l: 'Date', v: date || '—' },
                 { l: 'Time', v: startTime && endTime ? `${startTime} — ${endTime}` : '—' },
                 { l: 'Capacity', v: capacity || '—' },

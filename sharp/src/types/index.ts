@@ -49,8 +49,9 @@ export interface CampusEvent {
   category: EventCategory;
   organizerId: string;
   organizerName: string;
-  venueId: string;
-  venueName: string;
+  eventType?: 'PHYSICAL' | 'ONLINE'; // Optional for backward compatibility, defaults to PHYSICAL
+  venueId?: string; // Optional for ONLINE events
+  venueName?: string; // Optional for ONLINE events
   department: string;
   startTime: Timestamp;
   endTime: Timestamp;

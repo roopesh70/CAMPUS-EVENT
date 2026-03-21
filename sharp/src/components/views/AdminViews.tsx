@@ -12,6 +12,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useActivityLogs } from '@/hooks/useActivityLogs';
 import { useNotifications } from '@/hooks/useNotifications';
 import { queryDocs, where } from '@/lib/firestore';
+import { isTimeOverlapping } from '@/lib/utils';
 import type { CampusEvent, UserProfile } from '@/types';
 
 export function AdminDashboard() {
@@ -76,7 +77,7 @@ export function AdminDashboard() {
                 </thead>
                 <tbody className="text-[10px]">
                   {pendingList.map((evt) => (
-                    <PendingRow key={evt.id} event={evt} />
+                    <PendingRow key={evt.id} event={evt} allEvents={events} refresh={fetchAllEvents} />
                   ))}
                 </tbody>
               </table>
@@ -109,7 +110,7 @@ export function AdminDashboard() {
   );
 }
 
-function PendingRow({ event }: { event: CampusEvent }) {
+function PendingRow({ event, allEvents, refresh }: { event: CampusEvent, allEvents: CampusEvent[], refresh: () => void }) {
   const { updateEventStatus } = useEvents();
   const { logActivity } = useActivityLogs();
   const { profile } = useAuthStore();
@@ -117,12 +118,35 @@ function PendingRow({ event }: { event: CampusEvent }) {
   const [acted, setActed] = useState<string | null>(null);
 
   const handleAction = async (action: 'approved' | 'rejected') => {
-    await updateEventStatus(event.id, action, action === 'rejected' ? 'Rejected by admin' : '');
-    if (profile) {
-      await logActivity(profile.uid, profile.name, 'admin', `${action}_event`, event.id, 'event', event.title);
-      await createNotification(event.organizerId, `Event ${action}`, `Your event "${event.title}" has been ${action}.`, 'approval', event.id);
+    try {
+      await updateEventStatus(event.id, action, action === 'rejected' ? 'Rejected by admin' : '');
+      if (profile) {
+        await logActivity(profile.uid, profile.name, 'admin', `${action}_event`, event.id, 'event', event.title);
+        await createNotification(event.organizerId, `Event ${action}`, `Your event "${event.title}" has been ${action}.`, 'approval', event.id);
+        
+        if (action === 'approved') {
+          // Notify competing pending events
+          const competingEvents = allEvents.filter(e => 
+            e.status === 'pending' && e.id !== event.id && e.venueId === event.venueId && e.eventType !== 'ONLINE' &&
+            isTimeOverlapping(event.startTime?.toMillis?.() || 0, event.endTime?.toMillis?.() || 0, e.startTime?.toMillis?.() || 0, e.endTime?.toMillis?.() || 0)
+          );
+          
+          for (const comp of competingEvents) {
+            await createNotification(
+              comp.organizerId, 
+              'Venue Allotted', 
+              `The venue ${comp.venueName} for your proposed event "${comp.title}" has been allotted to another event. Please update your proposal to select a different venue or time.`,
+              'system', 
+              comp.id
+            );
+          }
+        }
+      }
+      setActed(action);
+      if (action === 'approved') refresh();
+    } catch (err: any) {
+      alert(err.message || 'Error updating status');
     }
-    setActed(action);
   };
 
   if (acted) {
@@ -152,7 +176,7 @@ function PendingRow({ event }: { event: CampusEvent }) {
 }
 
 export function AdminApprovals() {
-  const { events, fetchEventsByStatus, updateEventStatus } = useEvents();
+  const { events: allEvents, fetchAllEvents, updateEventStatus } = useEvents();
   const { logActivity } = useActivityLogs();
   const { profile } = useAuthStore();
   const { createNotification } = useNotifications(profile?.uid);
@@ -161,18 +185,71 @@ export function AdminApprovals() {
   const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
 
   useEffect(() => {
-    if (tab === 'pending') fetchEventsByStatus('pending');
-    else fetchEventsByStatus('approved');
-  }, [tab, fetchEventsByStatus]);
+    fetchAllEvents();
+  }, [fetchAllEvents]);
+
+  // Derive display events based on tab
+  const displayEvents = allEvents.filter(e => tab === 'pending' ? e.status === 'pending' : e.status !== 'pending' && e.status !== 'draft');
+
+  // Helper to find conflicts
+  const getConflicts = (evt: CampusEvent) => {
+    if (evt.eventType === 'ONLINE') return { red: [], orange: [] };
+    
+    const eStart = evt.startTime?.toMillis?.() || 0;
+    const eEnd = evt.endTime?.toMillis?.() || 0;
+    
+    const red: string[] = [];
+    const orange: string[] = [];
+    
+    for (const other of allEvents) {
+      if (other.id === evt.id) continue;
+      if (other.eventType === 'ONLINE') continue;
+      if (other.venueId !== evt.venueId) continue;
+      
+      const oStart = other.startTime?.toMillis?.() || 0;
+      const oEnd = other.endTime?.toMillis?.() || 0;
+      
+      if (isTimeOverlapping(eStart, eEnd, oStart, oEnd)) {
+        if (other.status === 'approved') red.push(other.title);
+        else if (other.status === 'pending') orange.push(other.title);
+      }
+    }
+    return { red, orange };
+  };
 
   const handleApprove = async (evt: CampusEvent) => {
     const comment = comments[evt.id] || '';
-    await updateEventStatus(evt.id, 'approved', comment);
-    if (profile) {
-      await logActivity(profile.uid, profile.name, 'admin', 'approved_event', evt.id, 'event', evt.title);
-      await createNotification(evt.organizerId, 'Event Approved!', `Your event "${evt.title}" has been approved.${comment ? ` Comment: ${comment}` : ''}`, 'approval', evt.id);
+    
+    try {
+      await updateEventStatus(evt.id, 'approved', comment);
+      
+      if (profile) {
+        await logActivity(profile.uid, profile.name, 'admin', 'approved_event', evt.id, 'event', evt.title);
+        await createNotification(evt.organizerId, 'Event Approved!', `Your event "${evt.title}" has been approved.${comment ? ` Comment: ${comment}` : ''}`, 'approval', evt.id);
+        
+        // Notify competing pending events
+        const { orange } = getConflicts(evt);
+        if (orange.length > 0) {
+          const competingEvents = allEvents.filter(e => 
+            e.status === 'pending' && e.id !== evt.id && e.venueId === evt.venueId && e.eventType !== 'ONLINE' &&
+            isTimeOverlapping(evt.startTime?.toMillis?.() || 0, evt.endTime?.toMillis?.() || 0, e.startTime?.toMillis?.() || 0, e.endTime?.toMillis?.() || 0)
+          );
+          
+          for (const comp of competingEvents) {
+            await createNotification(
+              comp.organizerId, 
+              'Venue Allotted', 
+              `The venue ${comp.venueName} for your proposed event "${comp.title}" has been allotted to another event. Please update your proposal to select a different venue or time.`,
+              'system', 
+              comp.id
+            );
+          }
+        }
+      }
+      fetchAllEvents();
+    } catch (err: any) {
+      alert(err.message || 'Error approving event');
     }
-    fetchEventsByStatus('pending');
   };
 
   const handleReject = async (evt: CampusEvent) => {
@@ -182,7 +259,7 @@ export function AdminApprovals() {
       await logActivity(profile.uid, profile.name, 'admin', 'rejected_event', evt.id, 'event', evt.title);
       await createNotification(evt.organizerId, 'Event Rejected', `Your event "${evt.title}" was rejected. Reason: ${comment}`, 'approval', evt.id);
     }
-    fetchEventsByStatus('pending');
+    fetchAllEvents();
   };
 
   return (
@@ -193,12 +270,14 @@ export function AdminApprovals() {
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        {events.length === 0 ? (
+        {displayEvents.length === 0 ? (
           <BrutalCard className="p-8 text-center">
             <p className="text-[11px] font-black uppercase italic opacity-30">{tab === 'pending' ? 'No pending approvals — all clear!' : 'No history yet.'}</p>
           </BrutalCard>
         ) : (
-          events.map((evt) => (
+          displayEvents.map((evt) => {
+            const conflicts = tab === 'pending' ? getConflicts(evt) : { red: [], orange: [] };
+            return (
             <BrutalCard key={evt.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
               {evt.posterUrl ? (
                 <div className="w-24 h-24 border-[2px] border-black rounded-lg shrink-0 overflow-hidden">
@@ -209,26 +288,40 @@ export function AdminApprovals() {
                   <span className="font-black text-3xl opacity-10">{evt.category[0].toUpperCase()}</span>
                 </div>
               )}
-              <div className="flex-1 space-y-1">
+              <div className="flex-1 space-y-1 w-full">
                 <div className="flex items-center gap-2">
+                  <Badge text={evt.eventType || 'PHYSICAL'} color={evt.eventType === 'ONLINE' ? COLORS.lavender : COLORS.teal} />
                   <Badge text={evt.category} color={COLORS.teal} />
                   <span className="text-[8px] font-black opacity-30 italic">BY {evt.organizerName?.toUpperCase() || 'UNKNOWN'}</span>
                 </div>
                 <h4 className="text-lg font-black uppercase italic leading-none">{evt.title}</h4>
                 <p className="text-[10px] font-bold opacity-60 leading-tight line-clamp-2">{evt.description || 'No description provided.'}</p>
-                {evt.approvalComment && tab === 'history' && (
-                  <p className="text-[9px] font-bold opacity-50 italic bg-yellow-50 border-[1.5px] border-yellow-400 rounded-lg px-2 py-1 mt-1">💬 {evt.approvalComment}</p>
+                
+                {tab === 'pending' && conflicts.red.length > 0 && (
+                  <p className="text-[10px] font-bold bg-red-100 border-[1.5px] border-red-500 text-red-700 px-2 py-1 rounded-lg mt-1 italic inline-block w-full">
+                    ❌ This venue is already allotted to: {conflicts.red.join(', ')}
+                  </p>
                 )}
-                {/* View Details Button replaced inline approve/reject inputs for pending Tab */}
-                <BrutalButton color="white" className="mt-2 text-[9px] px-4 py-1.5" onClick={() => setSelectedEvent(evt)}>
-                  {tab === 'pending' ? 'Review & take Action' : 'View full details'}
-                </BrutalButton>
+                {tab === 'pending' && conflicts.red.length === 0 && conflicts.orange.length > 0 && (
+                  <p className="text-[10px] font-bold bg-orange-100 border-[1.5px] border-orange-500 text-orange-700 px-2 py-1 rounded-lg mt-1 italic inline-block w-full">
+                    ⚠️ This venue is also requested by: {conflicts.orange.join(', ')}
+                  </p>
+                )}
+
+                {evt.approvalComment && tab === 'history' && (
+                  <p className="text-[9px] font-bold opacity-50 italic bg-yellow-50 border-[1.5px] border-yellow-400 rounded-lg px-2 py-1 mt-1 block">💬 {evt.approvalComment}</p>
+                )}
+                <div className="mt-2">
+                  <BrutalButton color="white" className="text-[9px] px-4 py-1.5" onClick={() => setSelectedEvent(evt)}>
+                    {tab === 'pending' ? 'Review & take Action' : 'View full details'}
+                  </BrutalButton>
+                </div>
               </div>
               {tab === 'history' && (
                 <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.red} />
               )}
             </BrutalCard>
-          ))
+          )})
         )}
       </div>
 
@@ -241,6 +334,7 @@ export function AdminApprovals() {
             <div className="border-b-[2.5px] border-black p-5 flex justify-between items-start bg-slate-50 sticky top-0 z-10 shrink-0">
               <div>
                 <div className="flex flex-wrap gap-2 mb-2">
+                  <Badge text={selectedEvent.eventType || 'PHYSICAL'} color={selectedEvent.eventType === 'ONLINE' ? COLORS.lavender : COLORS.teal} />
                   <Badge text={selectedEvent.category} color={COLORS.teal} />
                   <Badge text={selectedEvent.status} color={selectedEvent.status === 'approved' ? COLORS.green : selectedEvent.status === 'pending' ? COLORS.pink : COLORS.yellow} />
                   <Badge text={selectedEvent.department || 'General'} color={COLORS.lavender} />
@@ -318,6 +412,30 @@ export function AdminApprovals() {
                   </div>
                 </div>
               )}
+
+              {/* Conflict Warnings in Modal */}
+              {(() => {
+                if (selectedEvent.status !== 'pending') return null;
+                const conflicts = getConflicts(selectedEvent);
+                return (
+                  <div className="space-y-2">
+                    {conflicts.red.length > 0 && (
+                      <div className="border-[2px] border-red-500 bg-red-100 p-3 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                        <p className="text-[11px] font-black uppercase text-red-700 italic">❌ This venue is already allotted to:</p>
+                        <p className="text-[10px] font-bold text-red-800">{conflicts.red.join(', ')}</p>
+                        <p className="text-[9px] font-bold opacity-60 mt-1">Approval is blocked until the conflict is resolved.</p>
+                      </div>
+                    )}
+                    {conflicts.red.length === 0 && conflicts.orange.length > 0 && (
+                      <div className="border-[2px] border-orange-500 bg-orange-100 p-3 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                        <p className="text-[11px] font-black uppercase text-orange-700 italic">⚠️ This venue is also requested by:</p>
+                        <p className="text-[10px] font-bold text-orange-800">{conflicts.orange.join(', ')}</p>
+                        <p className="text-[9px] font-bold opacity-60 mt-1">Only one event can be approved for this venue/time.</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Footer / Actions - Only show action buttons if status is pending */}
@@ -332,7 +450,9 @@ export function AdminApprovals() {
                     className="flex-1 text-[10px]"
                   />
                   <div className="flex gap-2 shrink-0">
-                    <BrutalButton color="#4ADE80" className="px-5 py-2 text-xs" onClick={() => { handleApprove(selectedEvent); setSelectedEvent(null); }}>
+                    <BrutalButton color="#4ADE80" className="px-5 py-2 text-xs opacity-90 disabled:opacity-40 disabled:pointer-events-none" 
+                      onClick={() => { handleApprove(selectedEvent); setSelectedEvent(null); }}
+                      disabled={getConflicts(selectedEvent).red.length > 0}>
                       <Check className="w-4 h-4 mr-1" /> Approve
                     </BrutalButton>
                     <BrutalButton color="#F87171" className="px-5 py-2 text-xs" onClick={() => { handleReject(selectedEvent); setSelectedEvent(null); }}>
