@@ -15,6 +15,27 @@ import { queryDocs, where } from '@/lib/firestore';
 import { isTimeOverlapping } from '@/lib/utils';
 import type { CampusEvent, UserProfile } from '@/types';
 
+const notifyCompetingEvents = async (
+  event: CampusEvent,
+  allEvents: CampusEvent[],
+  createNotification: any
+) => {
+  if (event.eventType === 'ONLINE') return;
+  const competingEvents = allEvents.filter(e =>
+    e.status === 'pending' && e.id !== event.id && e.venueId === event.venueId && e.eventType !== 'ONLINE' &&
+    isTimeOverlapping(event.startTime?.toMillis?.() || 0, event.endTime?.toMillis?.() || 0, e.startTime?.toMillis?.() || 0, e.endTime?.toMillis?.() || 0)
+  );
+  await Promise.all(competingEvents.map(comp =>
+    createNotification(
+      comp.organizerId,
+      'Venue Allotted',
+      `The venue ${comp.venueName} for your proposed event "${comp.title}" has been allotted to another event. Please update your proposal to select a different venue or time.`,
+      'system',
+      comp.id
+    )
+  ));
+};
+
 export function AdminDashboard() {
   const { events, fetchAllEvents } = useEvents();
   const [userCount, setUserCount] = useState(0);
@@ -123,27 +144,13 @@ function PendingRow({ event, allEvents, refresh }: { event: CampusEvent, allEven
       if (profile) {
         await logActivity(profile.uid, profile.name, 'admin', `${action}_event`, event.id, 'event', event.title);
         await createNotification(event.organizerId, `Event ${action}`, `Your event "${event.title}" has been ${action}.`, 'approval', event.id);
-        
+
         if (action === 'approved') {
-          // Notify competing pending events
-          const competingEvents = allEvents.filter(e => 
-            e.status === 'pending' && e.id !== event.id && e.venueId === event.venueId && e.eventType !== 'ONLINE' &&
-            isTimeOverlapping(event.startTime?.toMillis?.() || 0, event.endTime?.toMillis?.() || 0, e.startTime?.toMillis?.() || 0, e.endTime?.toMillis?.() || 0)
-          );
-          
-          for (const comp of competingEvents) {
-            await createNotification(
-              comp.organizerId, 
-              'Venue Allotted', 
-              `The venue ${comp.venueName} for your proposed event "${comp.title}" has been allotted to another event. Please update your proposal to select a different venue or time.`,
-              'system', 
-              comp.id
-            );
-          }
+          await notifyCompetingEvents(event, allEvents, createNotification);
         }
       }
       setActed(action);
-      if (action === 'approved') refresh();
+      refresh();
     } catch (err: any) {
       alert(err.message || 'Error updating status');
     }
@@ -194,21 +201,21 @@ export function AdminApprovals() {
   // Helper to find conflicts
   const getConflicts = (evt: CampusEvent) => {
     if (evt.eventType === 'ONLINE') return { red: [], orange: [] };
-    
+
     const eStart = evt.startTime?.toMillis?.() || 0;
     const eEnd = evt.endTime?.toMillis?.() || 0;
-    
+
     const red: string[] = [];
     const orange: string[] = [];
-    
+
     for (const other of allEvents) {
       if (other.id === evt.id) continue;
       if (other.eventType === 'ONLINE') continue;
       if (other.venueId !== evt.venueId) continue;
-      
+
       const oStart = other.startTime?.toMillis?.() || 0;
       const oEnd = other.endTime?.toMillis?.() || 0;
-      
+
       if (isTimeOverlapping(eStart, eEnd, oStart, oEnd)) {
         if (other.status === 'approved') red.push(other.title);
         else if (other.status === 'pending') orange.push(other.title);
@@ -219,32 +226,21 @@ export function AdminApprovals() {
 
   const handleApprove = async (evt: CampusEvent) => {
     const comment = comments[evt.id] || '';
-    
+
     try {
+      const { red } = getConflicts(evt);
+      if (red.length > 0) {
+        alert('Cannot approve: venue is already allotted to another event.');
+        return;
+      }
       await updateEventStatus(evt.id, 'approved', comment);
-      
+
       if (profile) {
         await logActivity(profile.uid, profile.name, 'admin', 'approved_event', evt.id, 'event', evt.title);
         await createNotification(evt.organizerId, 'Event Approved!', `Your event "${evt.title}" has been approved.${comment ? ` Comment: ${comment}` : ''}`, 'approval', evt.id);
-        
+
         // Notify competing pending events
-        const { orange } = getConflicts(evt);
-        if (orange.length > 0) {
-          const competingEvents = allEvents.filter(e => 
-            e.status === 'pending' && e.id !== evt.id && e.venueId === evt.venueId && e.eventType !== 'ONLINE' &&
-            isTimeOverlapping(evt.startTime?.toMillis?.() || 0, evt.endTime?.toMillis?.() || 0, e.startTime?.toMillis?.() || 0, e.endTime?.toMillis?.() || 0)
-          );
-          
-          for (const comp of competingEvents) {
-            await createNotification(
-              comp.organizerId, 
-              'Venue Allotted', 
-              `The venue ${comp.venueName} for your proposed event "${comp.title}" has been allotted to another event. Please update your proposal to select a different venue or time.`,
-              'system', 
-              comp.id
-            );
-          }
-        }
+        await notifyCompetingEvents(evt, allEvents, createNotification);
       }
       fetchAllEvents();
     } catch (err: any) {
@@ -278,50 +274,51 @@ export function AdminApprovals() {
           displayEvents.map((evt) => {
             const conflicts = tab === 'pending' ? getConflicts(evt) : { red: [], orange: [] };
             return (
-            <BrutalCard key={evt.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-              {evt.posterUrl ? (
-                <div className="w-24 h-24 border-[2px] border-black rounded-lg shrink-0 overflow-hidden">
-                  <img src={evt.posterUrl} alt={evt.title} className="w-full h-full object-cover" />
-                </div>
-              ) : (
-                <div className="w-24 h-24 bg-slate-200 border-[2px] border-black rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
-                  <span className="font-black text-3xl opacity-10">{evt.category[0].toUpperCase()}</span>
-                </div>
-              )}
-              <div className="flex-1 space-y-1 w-full">
-                <div className="flex items-center gap-2">
-                  <Badge text={evt.eventType || 'PHYSICAL'} color={evt.eventType === 'ONLINE' ? COLORS.lavender : COLORS.teal} />
-                  <Badge text={evt.category} color={COLORS.teal} />
-                  <span className="text-[8px] font-black opacity-30 italic">BY {evt.organizerName?.toUpperCase() || 'UNKNOWN'}</span>
-                </div>
-                <h4 className="text-lg font-black uppercase italic leading-none">{evt.title}</h4>
-                <p className="text-[10px] font-bold opacity-60 leading-tight line-clamp-2">{evt.description || 'No description provided.'}</p>
-                
-                {tab === 'pending' && conflicts.red.length > 0 && (
-                  <p className="text-[10px] font-bold bg-red-100 border-[1.5px] border-red-500 text-red-700 px-2 py-1 rounded-lg mt-1 italic inline-block w-full">
-                    ❌ This venue is already allotted to: {conflicts.red.join(', ')}
-                  </p>
-                )}
-                {tab === 'pending' && conflicts.red.length === 0 && conflicts.orange.length > 0 && (
-                  <p className="text-[10px] font-bold bg-orange-100 border-[1.5px] border-orange-500 text-orange-700 px-2 py-1 rounded-lg mt-1 italic inline-block w-full">
-                    ⚠️ This venue is also requested by: {conflicts.orange.join(', ')}
-                  </p>
-                )}
+              <BrutalCard key={evt.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                {evt.posterUrl ? (
+                  <div className="w-24 h-24 border-[2px] border-black rounded-lg shrink-0 overflow-hidden">
+                    <img src={evt.posterUrl} alt={evt.title} className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="w-24 h-24 bg-slate-200 border-[2px] border-black rounded-lg shrink-0 overflow-hidden flex items-center justify-center">
+                    <span className="font-black text-3xl opacity-10">{evt.category[0].toUpperCase()}</span>
+                    <span className="font-black text-3xl opacity-10">{(evt.category?.[0] || '?').toUpperCase()}</span>
+                  </div>
+                <div className="flex-1 space-y-1 w-full">
+                  <div className="flex items-center gap-2">
+                    <Badge text={evt.eventType || 'PHYSICAL'} color={evt.eventType === 'ONLINE' ? COLORS.lavender : COLORS.teal} />
+                    <Badge text={evt.category} color={COLORS.teal} />
+                    <span className="text-[8px] font-black opacity-30 italic">BY {evt.organizerName?.toUpperCase() || 'UNKNOWN'}</span>
+                  </div>
+                  <h4 className="text-lg font-black uppercase italic leading-none">{evt.title}</h4>
+                  <p className="text-[10px] font-bold opacity-60 leading-tight line-clamp-2">{evt.description || 'No description provided.'}</p>
 
-                {evt.approvalComment && tab === 'history' && (
-                  <p className="text-[9px] font-bold opacity-50 italic bg-yellow-50 border-[1.5px] border-yellow-400 rounded-lg px-2 py-1 mt-1 block">💬 {evt.approvalComment}</p>
-                )}
-                <div className="mt-2">
-                  <BrutalButton color="white" className="text-[9px] px-4 py-1.5" onClick={() => setSelectedEvent(evt)}>
-                    {tab === 'pending' ? 'Review & take Action' : 'View full details'}
-                  </BrutalButton>
+                  {tab === 'pending' && conflicts.red.length > 0 && (
+                    <p className="text-[10px] font-bold bg-red-100 border-[1.5px] border-red-500 text-red-700 px-2 py-1 rounded-lg mt-1 italic inline-block w-full">
+                      ❌ This venue is already allotted to: {conflicts.red.join(', ')}
+                    </p>
+                  )}
+                  {tab === 'pending' && conflicts.red.length === 0 && conflicts.orange.length > 0 && (
+                    <p className="text-[10px] font-bold bg-orange-100 border-[1.5px] border-orange-500 text-orange-700 px-2 py-1 rounded-lg mt-1 italic inline-block w-full">
+                      ⚠️ This venue is also requested by: {conflicts.orange.join(', ')}
+                    </p>
+                  )}
+
+                  {evt.approvalComment && tab === 'history' && (
+                    <p className="text-[9px] font-bold opacity-50 italic bg-yellow-50 border-[1.5px] border-yellow-400 rounded-lg px-2 py-1 mt-1 block">💬 {evt.approvalComment}</p>
+                  )}
+                  <div className="mt-2">
+                    <BrutalButton color="white" className="text-[9px] px-4 py-1.5" onClick={() => setSelectedEvent(evt)}>
+                      {tab === 'pending' ? 'Review & take Action' : 'View full details'}
+                    </BrutalButton>
+                  </div>
                 </div>
-              </div>
-              {tab === 'history' && (
-                <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.red} />
-              )}
-            </BrutalCard>
-          )})
+                {tab === 'history' && (
+                  <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : COLORS.red} />
+                )}
+              </BrutalCard>
+            )
+          })
         )}
       </div>
 
@@ -329,7 +326,7 @@ export function AdminApprovals() {
       {selectedEvent && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]" onClick={() => setSelectedEvent(null)}>
           <div className="bg-[#FFFBEB] border-[3px] border-black rounded-2xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-[slideUp_0.3s_ease-out] flex flex-col" onClick={e => e.stopPropagation()}>
-            
+
             {/* Header */}
             <div className="border-b-[2.5px] border-black p-5 flex justify-between items-start bg-slate-50 sticky top-0 z-10 shrink-0">
               <div>
@@ -349,7 +346,7 @@ export function AdminApprovals() {
 
             {/* Scrollable Body */}
             <div className="p-5 space-y-6 overflow-y-auto">
-              
+
               {/* Poster */}
               {selectedEvent.posterUrl && (
                 <div className="rounded-xl border-[2.5px] border-black overflow-hidden bg-black flex justify-center max-h-48">
@@ -368,7 +365,7 @@ export function AdminApprovals() {
                 <div className="bg-white border-[2px] border-black rounded-xl p-3">
                   <span className="text-[7px] font-black uppercase opacity-40 block">Date & Time</span>
                   <span className="text-[10px] font-black block">{selectedEvent.startTime?.toDate?.().toLocaleDateString() || 'N/A'}</span>
-                  <span className="text-[8px] font-bold opacity-60 block">{selectedEvent.startTime?.toDate?.().toLocaleTimeString([], { hour: '2-digit', minute:'2-digit' }) || ''}</span>
+                  <span className="text-[8px] font-bold opacity-60 block">{selectedEvent.startTime?.toDate?.().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || ''}</span>
                 </div>
                 <div className="bg-white border-[2px] border-black rounded-xl p-3">
                   <span className="text-[7px] font-black uppercase opacity-40 block">Venue</span>
@@ -442,7 +439,7 @@ export function AdminApprovals() {
             <div className="p-5 border-t-[2.5px] border-black bg-white sticky bottom-0 z-10 shrink-0">
               {selectedEvent.status === 'pending' ? (
                 <div className="flex flex-col sm:flex-row gap-3">
-                  <BrutalInput 
+                  <BrutalInput
                     type="text"
                     placeholder="Add approval comment / reason..."
                     value={comments[selectedEvent.id] || ''}
@@ -450,7 +447,7 @@ export function AdminApprovals() {
                     className="flex-1 text-[10px]"
                   />
                   <div className="flex gap-2 shrink-0">
-                    <BrutalButton color="#4ADE80" className="px-5 py-2 text-xs opacity-90 disabled:opacity-40 disabled:pointer-events-none" 
+                    <BrutalButton color="#4ADE80" className="px-5 py-2 text-xs opacity-90 disabled:opacity-40 disabled:pointer-events-none"
                       onClick={() => { handleApprove(selectedEvent); setSelectedEvent(null); }}
                       disabled={getConflicts(selectedEvent).red.length > 0}>
                       <Check className="w-4 h-4 mr-1" /> Approve

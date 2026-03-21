@@ -208,6 +208,7 @@ export function CreateEventFlow() {
 
   const handleSubmit = async () => {
     if (!profile) return;
+    setSubmitError(null);
     setSubmitting(true);
 
     // Upload poster to Cloudinary if selected
@@ -253,9 +254,7 @@ export function CreateEventFlow() {
         ...(regDeadline ? { registrationDeadline: Timestamp.fromDate(new Date(`${regDeadline}T23:59`)) } : {}),
       });
 
-      if (profile) {
-        await logActivity(profile.uid, profile.name, 'organizer', 'create_event', newEventId, 'event', title);
-      }
+      await logActivity(profile.uid, profile.name || profile.email, 'organizer', 'create_event', newEventId, 'event', title);
 
       setSubmitting(false);
       setSuccess(true);
@@ -473,7 +472,7 @@ export function CreateEventFlow() {
               <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Eligibility — Departments</label>
               <div className="flex flex-wrap gap-2">
                 {['Computer Science', 'Electronics', 'Mechanical', 'Civil', 'MBA', 'All Departments'].map(d => (
-                  <button key={d} onClick={() => { if (d === 'All Departments') { setEligDepts([]); } else { setEligDepts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]); }}}
+                  <button key={d} onClick={() => { if (d === 'All Departments') { setEligDepts([]); } else { setEligDepts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]); } }}
                     className={`border-[2px] border-black px-3 py-1 text-[8px] font-black uppercase rounded-xl transition-all ${d === 'All Departments' ? (eligDepts.length === 0 ? 'bg-yellow-400' : 'bg-white') : (eligDepts.includes(d) ? 'bg-teal-400' : 'bg-white')}`}>
                     {d}
                   </button>

@@ -6,7 +6,7 @@ import {
   listenToCollection, where, orderBy, limit, serverTimestamp, increment,
   doc, db,
 } from '@/lib/firestore';
-import { updateDoc } from 'firebase/firestore';
+import { updateDoc, runTransaction, query, collection } from 'firebase/firestore';
 import { uploadFile } from '@/lib/storage';
 import { isTimeOverlapping } from '@/lib/utils';
 import type { CampusEvent, EventStatus } from '@/types';
@@ -71,47 +71,58 @@ export function useEvents() {
     data: Omit<CampusEvent, 'id' | 'createdAt' | 'updatedAt' | 'registeredCount' | 'attendanceCount' | 'conflictFlag'>,
     posterFile?: File
   ) => {
-    // 1. Double-Booking Validation
     const eventType = data.eventType || 'PHYSICAL';
-    if (eventType === 'PHYSICAL' && data.venueId) {
-      // Find events in the same venue that are PHYSICAL and not draft/rejected
-      const existingEvents = await queryDocs<CampusEvent>('events', [
-        where('venueId', '==', data.venueId)
-      ]);
+    let docRefId = '';
 
-      const newStart = data.startTime.toMillis();
-      const newEnd = data.endTime.toMillis();
+    await runTransaction(db, async (transaction) => {
+      // 1. Double-Booking Validation
+      if (eventType === 'PHYSICAL' && data.venueId) {
+        // Find events in the same venue that are PHYSICAL and not draft/rejected
+        const eventsRef = collection(db, 'events');
+        const q = query(eventsRef, where('venueId', '==', data.venueId));
+        // @ts-ignore - firebase/firestore transaction.get supports query, but types might be outdated
+        const querySnapshot = await transaction.get(q) as any;
 
-      for (const evt of existingEvents) {
-        // Only block if the overlapping event is actually APPROVED
-        if (evt.status !== 'approved') continue;
-        if (evt.eventType === 'ONLINE') continue;
+        const newStart = data.startTime.toMillis();
+        const newEnd = data.endTime.toMillis();
 
-        const eStart = evt.startTime.toMillis();
-        const eEnd = evt.endTime.toMillis();
+        for (const docSnap of querySnapshot.docs) {
+          const evt = docSnap.data() as CampusEvent;
+          // Only block if the overlapping event is actually APPROVED
+          if (evt.status !== 'approved') continue;
+          if (evt.eventType === 'ONLINE') continue;
 
-        if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
-          throw new Error("Venue already booked for this time slot");
+          const eStart = evt.startTime.toMillis();
+          const eEnd = evt.endTime.toMillis();
+
+          if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
+            throw new Error("Venue already booked for this time slot");
+          }
         }
       }
-    }
 
-    let posterUrl = '';
-    const docRef = await addDocument('events', {
-      ...data,
-      eventType,
-      registeredCount: 0,
-      attendanceCount: 0,
-      conflictFlag: false,
-      updatedAt: serverTimestamp(),
+      // Generate a new reference
+      const newDocRef = doc(collection(db, 'events'));
+      docRefId = newDocRef.id;
+
+      transaction.set(newDocRef, {
+        ...data,
+        eventType,
+        registeredCount: 0,
+        attendanceCount: 0,
+        conflictFlag: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
     });
 
+    let posterUrl = '';
     if (posterFile) {
-      posterUrl = await uploadFile(`events/${docRef.id}/poster.${posterFile.name.split('.').pop()}`, posterFile);
-      await updateDocument('events', docRef.id, { posterUrl });
+      posterUrl = await uploadFile(`events/${docRefId}/poster.${posterFile.name.split('.').pop()}`, posterFile);
+      await updateDocument('events', docRefId, { posterUrl });
     }
 
-    return docRef.id;
+    return docRefId;
   }, []);
 
   // Update event status (admin approve/reject)
@@ -120,37 +131,47 @@ export function useEvents() {
     status: EventStatus,
     comment?: string
   ) => {
-    // If approving, strictly enforce double-booking prevention against other approved events
-    if (status === 'approved') {
-      const currentEvent = await getDocument<CampusEvent>('events', eventId);
-      if (!currentEvent) throw new Error("Event not found");
+    await runTransaction(db, async (transaction) => {
+      const eventRef = doc(db, 'events', eventId);
+      const currentEventSnap = await transaction.get(eventRef);
+      if (!currentEventSnap.exists()) throw new Error("Event not found");
+      const currentEvent = currentEventSnap.data() as CampusEvent;
 
-      if (currentEvent.eventType === 'PHYSICAL' && currentEvent.venueId) {
-        const existingEvents = await queryDocs<CampusEvent>('events', [
-          where('venueId', '==', currentEvent.venueId),
-          where('status', '==', 'approved')
-        ]);
+      // If approving, strictly enforce double-booking prevention against other approved events
+      if (status === 'approved') {
+        if (currentEvent.eventType === 'PHYSICAL' && currentEvent.venueId) {
+          const eventsRef = collection(db, 'events');
+          const q = query(
+            eventsRef,
+            where('venueId', '==', currentEvent.venueId),
+            where('status', '==', 'approved')
+          );
+          // @ts-ignore - firebase/firestore transaction.get supports query, but types might be outdated
+          const existingEventsSnap = await transaction.get(q) as any;
 
-        const newStart = currentEvent.startTime.toMillis();
-        const newEnd = currentEvent.endTime.toMillis();
+          const newStart = currentEvent.startTime.toMillis();
+          const newEnd = currentEvent.endTime.toMillis();
 
-        for (const evt of existingEvents) {
-          if (evt.id === eventId) continue;
-          if (evt.eventType === 'ONLINE') continue;
+          for (const docSnap of existingEventsSnap.docs) {
+            if (docSnap.id === eventId) continue;
+            const evt = docSnap.data() as CampusEvent;
+            if (evt.eventType === 'ONLINE') continue;
 
-          const eStart = evt.startTime.toMillis();
-          const eEnd = evt.endTime.toMillis();
+            const eStart = evt.startTime.toMillis();
+            const eEnd = evt.endTime.toMillis();
 
-          if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
-            throw new Error(`Venue is already allotted to "${evt.title}" for this time slot.`);
+            if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
+              throw new Error(`Venue is already allotted to "${evt.title}" for this time slot.`);
+            }
           }
         }
       }
-    }
 
-    await updateDocument('events', eventId, {
-      status,
-      ...(comment ? { approvalComment: comment } : {}),
+      transaction.update(eventRef, {
+        status,
+        ...(comment ? { approvalComment: comment } : {}),
+        updatedAt: serverTimestamp(),
+      });
     });
   }, []);
 
@@ -159,36 +180,44 @@ export function useEvents() {
     eventId: string,
     data: Partial<CampusEvent>
   ) => {
-    // We need the current event to check if we are updating a physical event, and if times have changed.
-    const currentEvent = await getDocument<CampusEvent>('events', eventId);
-    if (!currentEvent) throw new Error("Event not found");
+    await runTransaction(db, async (transaction) => {
+      const eventRef = doc(db, 'events', eventId);
+      const currentEventSnap = await transaction.get(eventRef);
+      if (!currentEventSnap.exists()) throw new Error("Event not found");
+      const currentEvent = currentEventSnap.data() as CampusEvent;
 
-    const eventType = data.eventType !== undefined ? data.eventType : (currentEvent.eventType || 'PHYSICAL');
-    const venueId = data.venueId !== undefined ? data.venueId : currentEvent.venueId;
-    
-    if (eventType === 'PHYSICAL' && venueId) {
-      const existingEvents = await queryDocs<CampusEvent>('events', [
-        where('venueId', '==', venueId)
-      ]);
+      const eventType = data.eventType !== undefined ? data.eventType : (currentEvent.eventType || 'PHYSICAL');
+      const venueId = data.venueId !== undefined ? data.venueId : currentEvent.venueId;
 
-      const newStart = data.startTime ? data.startTime.toMillis() : currentEvent.startTime.toMillis();
-      const newEnd = data.endTime ? data.endTime.toMillis() : currentEvent.endTime.toMillis();
+      if (eventType === 'PHYSICAL' && venueId) {
+        const eventsRef = collection(db, 'events');
+        const q = query(eventsRef, where('venueId', '==', venueId));
+        // @ts-ignore - firebase/firestore transaction.get supports query, but types might be outdated
+        const querySnapshot = await transaction.get(q) as any;
 
-      for (const evt of existingEvents) {
-        if (evt.id === eventId) continue; // skip self
-        if (evt.status !== 'approved') continue; // Only block on APPROVED events
-        if (evt.eventType === 'ONLINE') continue;
+        const newStart = data.startTime ? data.startTime.toMillis() : currentEvent.startTime.toMillis();
+        const newEnd = data.endTime ? data.endTime.toMillis() : currentEvent.endTime.toMillis();
 
-        const eStart = evt.startTime.toMillis();
-        const eEnd = evt.endTime.toMillis();
+        for (const docSnap of querySnapshot.docs) {
+          if (docSnap.id === eventId) continue; // skip self
+          const evt = docSnap.data() as CampusEvent;
+          if (evt.status !== 'approved') continue; // Only block on APPROVED events
+          if (evt.eventType === 'ONLINE') continue;
 
-        if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
-          throw new Error("Venue already booked for this time slot");
+          const eStart = evt.startTime.toMillis();
+          const eEnd = evt.endTime.toMillis();
+
+          if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
+            throw new Error("Venue already booked for this time slot");
+          }
         }
       }
-    }
 
-    await updateDocument('events', eventId, data);
+      transaction.update(eventRef, {
+        ...data,
+        updatedAt: serverTimestamp(),
+      });
+    });
   }, []);
 
   // Delete event
