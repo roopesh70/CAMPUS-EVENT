@@ -206,11 +206,11 @@ export async function renderCertificateDataUrl(
   ctx.font = footerFont;
   
   if (template.idPosition || template.datePosition) {
-    if (template.idPosition) {
+    if (template.idPosition && template.idPosition.x !== undefined && template.idPosition.y !== undefined) {
       ctx.textAlign = 'left';
       ctx.fillText(`ID: ${renderVars.id}`, template.idPosition.x, template.idPosition.y);
     }
-    if (template.datePosition) {
+    if (template.datePosition && template.datePosition.x !== undefined && template.datePosition.y !== undefined) {
       ctx.textAlign = 'left';
       ctx.fillText(`Date: ${renderVars.date}`, template.datePosition.x, template.datePosition.y);
     }
