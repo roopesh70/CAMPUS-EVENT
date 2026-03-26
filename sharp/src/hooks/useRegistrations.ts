@@ -172,7 +172,12 @@ export function useRegistrations() {
     // Get previous status to adjust attendance count properly
     const regSnap = await getDoc(doc(db, 'registrations', regId));
     if (!regSnap.exists()) return;
-    const prevStatus = regSnap.data().attendanceStatus;
+    const regData = regSnap.data();
+    if (regData.status === 'cancelled') {
+       console.warn('[markAttendance] Cannot mark attendance for a cancelled registration:', regId);
+       return;
+    }
+    const prevStatus = regData.attendanceStatus;
 
     await updateDocument('registrations', regId, { attendanceStatus: status });
     

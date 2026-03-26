@@ -1596,7 +1596,9 @@ export function AttendancePage() {
               }
 
               const reg = registrationsRef.current.find(r => r.registrationId === scannedRegId);
-              if (reg && reg.attendanceStatus !== 'present') {
+              if (reg && reg.status === 'cancelled') {
+                setScanResult('✗ Cannot mark attendance for a cancelled registration');
+              } else if (reg && reg.attendanceStatus !== 'present') {
                 await markAttendance(reg.id, selectedEventRef.current, 'present');
                 await fetchEventParticipants(selectedEventRef.current);
                 setScanResult(`✓ Checked in: ${reg.userName} (${reg.userDepartment || 'N/A'})`);
@@ -1609,7 +1611,9 @@ export function AttendancePage() {
               // Old format: SHARP_CHECKIN:{userId}
               const userId = parts[0];
               const reg = registrationsRef.current.find(r => r.userId === userId);
-              if (reg && reg.attendanceStatus !== 'present') {
+              if (reg && reg.status === 'cancelled') {
+                setScanResult('✗ Cannot mark attendance for a cancelled registration');
+              } else if (reg && reg.attendanceStatus !== 'present') {
                 await markAttendance(reg.id, selectedEventRef.current, 'present');
                 await fetchEventParticipants(selectedEventRef.current);
                 setScanResult(`✓ Checked in: ${reg.userName} (${reg.userDepartment || 'N/A'})`);
@@ -1670,6 +1674,13 @@ export function AttendancePage() {
 
     if (!reg) {
       setManualResult('✗ No registration found with this ID');
+      setManualSearching(false);
+      setTimeout(() => setManualResult(''), 4000);
+      return;
+    }
+
+    if (reg.status === 'cancelled') {
+      setManualResult('✗ Cannot mark attendance for a cancelled registration');
       setManualSearching(false);
       setTimeout(() => setManualResult(''), 4000);
       return;
@@ -1817,25 +1828,27 @@ export function AttendancePage() {
                       <tr><td colSpan={5} className="p-4 text-center text-[10px] font-black uppercase italic opacity-30">No participants registered</td></tr>
                     ) : (
                       registrations.map((r) => (
-                        <tr key={r.id} className={`border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50 ${r.attendanceStatus === 'present' ? 'bg-green-50/50' : ''}`}>
-                          <td className="p-3 font-black uppercase">{r.userName || 'Unknown'}</td>
+                        <tr key={r.id} className={`border-b-[1px] border-black border-opacity-10 last:border-0 hover:bg-slate-50 ${r.attendanceStatus === 'present' ? 'bg-green-50/50' : r.status === 'cancelled' ? 'opacity-50 grayscale bg-red-50/30' : ''}`}>
+                          <td className={`p-3 font-black uppercase ${r.status === 'cancelled' ? 'line-through decoration-black decoration-[1.5px]' : ''}`}>{r.userName || 'Unknown'}</td>
                           <td className="p-3 hidden sm:table-cell">{r.userDepartment || '—'}</td>
                           <td className="p-3 hidden sm:table-cell text-[8px] opacity-50">{r.registrationId || r.id?.slice(0, 8)}</td>
                           <td className="p-3 text-center">
-                            <Badge text={r.attendanceStatus || 'pending'} color={r.attendanceStatus === 'present' ? COLORS.green : r.attendanceStatus === 'absent' ? COLORS.red : COLORS.yellow} />
+                            <Badge text={r.status === 'cancelled' ? 'CANCELLED' : (r.attendanceStatus || 'pending')} color={r.status === 'cancelled' ? COLORS.red : (r.attendanceStatus === 'present' ? COLORS.green : r.attendanceStatus === 'absent' ? COLORS.red : COLORS.yellow)} />
                           </td>
                           <td className="p-3 flex gap-1.5 justify-end">
                             <button
                               onClick={() => handleMark(r.id, 'present')}
-                              disabled={marking === r.id || r.attendanceStatus === 'present'}
-                              className="w-7 h-7 bg-green-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
+                              disabled={marking === r.id || r.attendanceStatus === 'present' || r.status === 'cancelled'}
+                              title={r.status === 'cancelled' ? "Cannot mark attendance for a cancelled registration" : "Mark Present"}
+                              className="w-7 h-7 bg-green-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => handleMark(r.id, 'absent')}
-                              disabled={marking === r.id || r.attendanceStatus === 'absent'}
-                              className="w-7 h-7 bg-red-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30"
+                              disabled={marking === r.id || r.attendanceStatus === 'absent' || r.status === 'cancelled'}
+                              title={r.status === 'cancelled' ? "Cannot mark attendance for a cancelled registration" : "Mark Absent"}
+                              className="w-7 h-7 bg-red-400 border-[2px] border-black rounded-lg shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center hover:shadow-none transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                             >
                               <UserIcon className="w-3.5 h-3.5" />
                             </button>
