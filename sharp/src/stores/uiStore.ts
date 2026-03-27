@@ -5,11 +5,13 @@ interface UIState {
   targetEventId: string | null;
   previousTab: string | null;
   sidebarOpen: boolean;
+  showQR: boolean;
   setActiveTab: (tab: string) => void;
   setTargetEventId: (id: string | null) => void;
   goBack: () => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
+  setShowQR: (show: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -17,6 +19,7 @@ export const useUIStore = create<UIState>((set) => ({
   targetEventId: null,
   previousTab: null,
   sidebarOpen: true,
+  showQR: false,
   setActiveTab: (tab) => set((state) => ({ 
     activeTab: tab,
     previousTab: state.activeTab === tab ? state.previousTab : state.activeTab
@@ -28,4 +31,5 @@ export const useUIStore = create<UIState>((set) => ({
   })),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  setShowQR: (show) => set({ showQR: show }),
 }));

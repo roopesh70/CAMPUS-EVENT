@@ -17,16 +17,17 @@ import { useTasks } from '@/hooks/useTasks';
 import { useCertificates } from '@/hooks/useCertificates';
 import { useSettings } from '@/hooks/useSettings';
 import { useCloudinary } from '@/hooks/useCloudinary';
-import { updateDocument, deleteDocument, queryDocs, addDocument, where, orderBy } from '@/lib/firestore';
-import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue, Certificate, CertificateTemplate } from '@/types';
+import { updateDocument, deleteDocument, queryDocs, addDocument, where, orderBy, getDocument } from '@/lib/firestore';
+import type { UserProfile, CampusEvent, Registration, Notification as NotifType, Venue, Certificate, CertificateTemplate, ActivityLog } from '@/types';
 import { Timestamp } from 'firebase/firestore';
 import { 
   Bell, Mail, Info, LogIn, Award as AwardIcon, MessageSquare, CheckSquare, User as UserIcon, FileText, 
-  Users, BarChart2, MapPin, Settings, Database, Activity, Send, 
+  Users, BarChart2, MapPin, Settings, Activity, Send, 
   Calendar, Search, Edit, Trash2, Eye, EyeOff, ShieldCheck,
   ChevronRight, MoreVertical, XCircle, Menu, LogOut, LayoutDashboard,
-  Filter, Plus, Clock, CheckCircle2, CirclePlus
+  Filter, Plus, Clock, CheckCircle2, CirclePlus, Download, RotateCcw, ShieldAlert
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { renderCertificateDataUrl } from '@/lib/certificateRenderer';
 
 /* ===== Public: Announcements ===== */
@@ -958,19 +959,19 @@ export function OrganizerMyEvents() {
   }, [fetchVenues]);
 
   useEffect(() => {
-    if (profile?.uid) fetchOrganizerEvents(profile.uid);
+    if (profile?.uid) fetchOrganizerEvents(profile.uid, true);
   }, [profile?.uid, fetchOrganizerEvents]);
 
   const handleOutcome = async (eventId: string, outcome: 'success' | 'failed') => {
     await updateDocument('events', eventId, { outcomeStatus: outcome, status: 'completed' });
-    if (profile?.uid) fetchOrganizerEvents(profile.uid);
+    if (profile?.uid) fetchOrganizerEvents(profile.uid, true);
   };
 
   const handleDelete = async (evt: CampusEvent) => {
     if (confirm(`Are you sure you want to completely delete "${evt.title}"?\nThis action cannot be undone.`)) {
       await deleteEvent(evt.id);
       if (profile) await logActivity(profile.uid, profile.name, 'organizer', 'delete_event', evt.id, 'event', evt.title);
-      if (profile?.uid) fetchOrganizerEvents(profile.uid);
+      if (profile?.uid) fetchOrganizerEvents(profile.uid, true);
     }
   };
 
@@ -1014,7 +1015,7 @@ export function OrganizerMyEvents() {
       setEditForm({});
       setSaving(false);
       setEditError(null);
-      fetchOrganizerEvents(profile.uid);
+      fetchOrganizerEvents(profile.uid, true);
     } catch (error: any) {
       setSaving(false);
       if (error.message === "Venue already booked for this time slot") {
@@ -1069,16 +1070,20 @@ export function OrganizerMyEvents() {
     setPosterPreview(evt.posterUrl || '');
   };
 
-  const filtered = tab === 'all' ? events : events.filter(e => e.status === tab);
+  const filtered = tab === 'all' 
+    ? events.filter(e => !e.archived) 
+    : tab === 'archived' 
+      ? events.filter(e => e.archived) 
+      : events.filter(e => e.status === tab && !e.archived);
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-yellow-400 underline-offset-4">My Events</h2>
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-        {['all', 'draft', 'pending', 'approved', 'completed'].map((t) => (
+        {['all', 'draft', 'pending', 'approved', 'completed', 'archived'].map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`whitespace-nowrap border-[2px] border-black px-4 py-1.5 font-black uppercase text-[9px] rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all italic ${tab === t ? 'bg-yellow-400' : 'bg-white'}`}>
-            {t} ({(t === 'all' ? events : events.filter(e => e.status === t)).length})
+            {t} ({(t === 'all' ? events.filter(e => !e.archived) : t === 'archived' ? events.filter(e => e.archived) : events.filter(e => e.status === t && !e.archived)).length})
           </button>
         ))}
       </div>
@@ -1102,6 +1107,7 @@ export function OrganizerMyEvents() {
                   <div className="flex items-center gap-2 mb-1">
                     <Badge text={evt.category} color={COLORS.teal} />
                     <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : evt.status === 'pending' ? COLORS.yellow : '#fff'} />
+                    {evt.archived && <Badge text="Archived" color={COLORS.lavender} />}
                     {evt.outcomeStatus && (
                       <Badge text={evt.outcomeStatus} color={evt.outcomeStatus === 'success' ? COLORS.green : COLORS.red} />
                     )}
@@ -3049,25 +3055,60 @@ export function SystemSettingsPage() {
 export function DataManagementPage() {
   const { events, fetchAllEvents } = useEvents();
   const { settings, saveSettings, loading: settingsLoading } = useSettings();
-  const [seeding, setSeeding] = useState(false);
-  const [seedResult, setSeedResult] = useState('');
   const [cleaning, setCleaning] = useState(false);
   const [cleanLog, setCleanLog] = useState<string[]>([]);
+  const [archiveYear, setArchiveYear] = useState('');
+  const [archiving, setArchiving] = useState(false);
+  const [archiveLog, setArchiveLog] = useState<string[]>([]);
+  const [migrationLog, setMigrationLog] = useState<string[]>([]);
+  const [migrating, setMigrating] = useState(false);
   const [saving, setSaving] = useState(false);
+  
+  // New States
+  const [portabilityId, setPortabilityId] = useState('');
+  const [isPortabilityLoading, setIsPortabilityLoading] = useState(false);
+  const [stats, setStats] = useState({ totalEvents: 0, activeEvents: 0, archivedEvents: 0, registrations: 0, archivedRegs: 0 });
+  const [purging, setPurging] = useState(false);
+  const [purgeLog, setPurgeLog] = useState<string[]>([]);
+  const [rollbackYear, setRollbackYear] = useState('');
+  const [rollingBack, setRollingBack] = useState(false);
+  const [eventsExportFormat, setEventsExportFormat] = useState<'JSON' | 'PDF'>('JSON');
+  const [rollbackLog, setRollbackLog] = useState<string[]>([]);
+  const [portabilityLog, setPortabilityLog] = useState<string[]>([]);
+  const [portabilityFormat, setPortabilityFormat] = useState<'JSON' | 'PDF'>('PDF');
+  const { profile } = useAuthStore();
+  const { logActivity } = useActivityLogs();
   const [localLegal, setLocalLegal] = useState({
     privacy: '',
     cookies: '',
-    terms: ''
+    terms: '',
+    currentAcademicYear: ''
   });
 
-  useEffect(() => { fetchAllEvents(); }, [fetchAllEvents]);
+  const fetchStats = useCallback(async () => {
+    const allEvents = await queryDocs<CampusEvent>('events', []);
+    const allRegs = await queryDocs<Registration>('registrations', []);
+    setStats({
+      totalEvents: allEvents.length,
+      activeEvents: allEvents.filter(e => !e.archived).length,
+      archivedEvents: allEvents.filter(e => e.archived).length,
+      registrations: allRegs.length,
+      archivedRegs: allRegs.filter(r => r.archived).length
+    });
+  }, []);
+
+  useEffect(() => { 
+    fetchAllEvents(); 
+    fetchStats();
+  }, [fetchAllEvents, fetchStats]);
 
   useEffect(() => {
     if (settings) {
       setLocalLegal({
         privacy: settings.privacyPolicy || '',
         cookies: settings.cookieSettings || '',
-        terms: settings.termsOfUse || ''
+        terms: settings.termsOfUse || '',
+        currentAcademicYear: settings.currentAcademicYear || ''
       });
     }
   }, [settings]);
@@ -3080,7 +3121,8 @@ export function DataManagementPage() {
         ...settings,
         privacyPolicy: localLegal.privacy,
         cookieSettings: localLegal.cookies,
-        termsOfUse: localLegal.terms
+        termsOfUse: localLegal.terms,
+        currentAcademicYear: localLegal.currentAcademicYear
       });
       alert('Legal content updated successfully!');
     } catch (err: any) {
@@ -3090,31 +3132,71 @@ export function DataManagementPage() {
     }
   };
 
-  const handleSeed = async () => {
-    setSeeding(true);
-    try {
-      const res = await fetch('/api/seed', { method: 'POST' });
-      const data = await res.json();
-      setSeedResult(data.message);
-    } catch {
-      setSeedResult('Seed failed');
+  const generateEventsPDF = (events: CampusEvent[]) => {
+    const doc = new jsPDF();
+    const margin = 20;
+    let y = 20;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("University Events Report", margin, y);
+    y += 10;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Total Events: ${events.length} | Generated: ${new Date().toLocaleString()}`, margin, y);
+    y += 15;
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("Event Title", margin, y);
+    doc.text("Category", margin + 65, y);
+    doc.text("Status", margin + 100, y);
+    doc.text("Outcome", margin + 125, y);
+    doc.text("Reg/Cap", margin + 145, y);
+    doc.text("Organizer", margin + 165, y);
+    y += 2;
+    doc.line(margin, y, 190, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+
+    events.forEach(e => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.text(e.title.substring(0, 32), margin, y);
+      doc.text(e.category.substring(0, 15), margin + 65, y);
+      doc.text(e.status.toUpperCase(), margin + 100, y);
+      doc.text((e.outcomeStatus || 'PENDING').toUpperCase(), margin + 125, y);
+      doc.text(`${e.registeredCount}/${e.capacity}`, margin + 145, y);
+      doc.text(e.organizerName.substring(0, 12), margin + 165, y);
+      y += 6;
+    });
+
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.text(`Page ${i} of ${pageCount} - University Campus Events`, 105, 285, { align: "center" });
     }
-    setSeeding(false);
+
+    doc.save(`events_report_${new Date().getTime()}.pdf`);
   };
 
   const exportEvents = () => {
-    const data = JSON.stringify(events.map(e => ({
-      id: e.id, title: e.title, category: e.category, status: e.status,
-      organizer: e.organizerName, venue: e.venueName, capacity: e.capacity,
-      registered: e.registeredCount, outcomeStatus: e.outcomeStatus,
-    })), null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'events_export.json';
-    link.click();
-    URL.revokeObjectURL(url);
+    if (eventsExportFormat === 'PDF') {
+      generateEventsPDF(events);
+    } else {
+      const data = JSON.stringify(events.map(e => ({
+        id: e.id, title: e.title, category: e.category, status: e.status,
+        organizer: e.organizerName, venue: e.venueName, capacity: e.capacity,
+        registered: e.registeredCount, outcomeStatus: e.outcomeStatus,
+      })), null, 2);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `events_export_${new Date().getTime()}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   const handleCleanDuplicates = useCallback(async () => {
@@ -3180,10 +3262,364 @@ export function DataManagementPage() {
     setCleaning(false);
   }, [events, fetchAllEvents]);
 
+  const handleArchiveCycle = async () => {
+    if (!archiveYear.trim() || !confirm(`Archive all completed events under academic year "${archiveYear}"? \n\nThis will mark events and registrations as archived for reporting purposes.`)) return;
+    setArchiving(true);
+    setArchiveLog([`🚀 Starting archival for ${archiveYear}...`]);
+
+    try {
+      const now = Date.now();
+      const pastEvents = events.filter(e => 
+        !e.archived && 
+        (
+          (e.academicYear === archiveYear && (e.status === 'completed' || e.startTime.toMillis() < now)) ||
+          (!e.academicYear && (e.status === 'completed' || e.startTime.toMillis() < now))
+        )
+      );
+      setArchiveLog(prev => [...prev, `📂 Found ${pastEvents.length} eligible event(s) to archive.`]);
+
+      if (pastEvents.length === 0) {
+        setArchiveLog(prev => [...prev, '✅ No events need archiving.']);
+        setArchiving(false);
+        return;
+      }
+
+      setArchiveLog(prev => [...prev, '🔍 Fetching registrations...']);
+      const allRegs = await queryDocs<Registration>('registrations', []);
+
+      for (const event of pastEvents) {
+        setArchiveLog(prev => [...prev, `   Archiving "${event.title}"...`]);
+        await updateDocument('events', event.id, { archived: true, academicYear: archiveYear, status: 'completed' });
+        const eventRegs = allRegs.filter(r => r.eventId === event.id);
+        for (const reg of eventRegs) {
+          await updateDocument('registrations', reg.id, { archived: true });
+        }
+        setArchiveLog(prev => [...prev, `     Done. (${eventRegs.length} registrations marked)`]);
+      }
+
+      if (profile) await logActivity(profile.uid, profile.name, 'admin', 'archive_cycle', archiveYear, 'system', `Archived ${pastEvents.length} events`);
+      setArchiveLog(prev => [...prev, `🎉 Successfully archived ${pastEvents.length} events for cycle ${archiveYear}!`]);
+      fetchAllEvents();
+    } catch (err: any) {
+      setArchiveLog(prev => [...prev, `❌ Error: ${err.message}`]);
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const handleColdStorageMigration = async () => {
+    if (!confirm('Identify and identify detailed registration data older than 2 years for lifecycle management?')) return;
+    setMigrating(true);
+    setMigrationLog(['🧊 Scanning for data older than 2 years...']);
+
+    try {
+      const twoYearsAgo = Date.now() - (2 * 365 * 24 * 60 * 60 * 1000);
+      const allRegs = await queryDocs<Registration>('registrations', []);
+      const oldRegs = allRegs.filter(r => r.registrationTime.toMillis() < twoYearsAgo && !r.archived);
+
+      if (oldRegs.length === 0) {
+        setMigrationLog(prev => [...prev, '✅ No detailed records found older than 2 years that aren\'t already archived.']);
+        setMigrating(false);
+        return;
+      }
+
+      setMigrationLog(prev => [...prev, `⚠️  Found ${oldRegs.length} records meeting cold storage criteria.`]);
+      setMigrationLog(prev => [...prev, '📝 Marking records as archived for lifecycle compliance...']);
+
+      for (const reg of oldRegs) {
+        await updateDocument('registrations', reg.id, { archived: true });
+      }
+
+      if (profile) await logActivity(profile.uid, profile.name, 'admin', 'cold_storage_migration', 'multi', 'system', `Migrated ${oldRegs.length} records`);
+      setMigrationLog(prev => [...prev, `🎉 Successfully migrated ${oldRegs.length} records to virtual cold storage!`]);
+      fetchStats();
+    } catch (err: any) {
+      setMigrationLog(prev => [...prev, `❌ Error: ${err.message}`]);
+    } finally {
+      setMigrating(false);
+    }
+  };
+
+  const generatePortabilityPDF = (userId: string, user: UserProfile, regs: Registration[], logs: ActivityLog[], certs: Certificate[]) => {
+    const doc = new jsPDF();
+    const margin = 20;
+    let y = 20;
+
+    // Header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("User Portability Report (GDPR)", margin, y);
+    y += 10;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, margin, y);
+    y += 15;
+
+    // User Profile
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("1. User Profile", margin, y);
+    y += 8;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Name: ${user.name}`, margin, y); y += 6;
+    doc.text(`Email: ${user.email}`, margin, y); y += 6;
+    doc.text(`Department: ${user.department}`, margin, y); y += 6;
+    doc.text(`Role: ${user.role.toUpperCase()}`, margin, y); y += 6;
+    doc.text(`UID: ${userId || 'N/A'}`, margin, y);
+    y += 15;
+
+    // Registrations
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("2. Event History", margin, y);
+    y += 8;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text("Event Title", margin, y);
+    doc.text("Date", margin + 80, y);
+    doc.text("Status", margin + 120, y);
+    doc.text("Attendance", margin + 150, y);
+    y += 2;
+    doc.line(margin, y, 190, y);
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    
+    regs.forEach(reg => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.text(reg.eventTitle.substring(0, 40), margin, y);
+      doc.text(reg.registrationTime?.toDate ? reg.registrationTime.toDate().toLocaleDateString() : 'N/A', margin + 80, y);
+      doc.text(reg.status.toUpperCase(), margin + 120, y);
+      doc.text(reg.attendanceStatus.toUpperCase(), margin + 150, y);
+      y += 6;
+    });
+
+    if (regs.length === 0) {
+      doc.text("No registrations found.", margin, y);
+      y += 6;
+    }
+    y += 15;
+
+    // Activity Logs
+    if (y > 240) { doc.addPage(); y = 20; }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("3. Activity Trail", margin, y);
+    y += 8;
+    doc.setFontSize(8);
+    logs.slice(0, 30).forEach(log => {
+      if (y > 270) { doc.addPage(); y = 20; }
+      const date = log.createdAt?.toDate ? log.createdAt.toDate().toLocaleString() : 'N/A';
+      doc.text(`[${date}] ${log.action.toUpperCase()} - ${log.entityType}: ${log.entityName || log.entityId}`, margin, y);
+      y += 5;
+    });
+
+    if (logs.length === 0) {
+      doc.text("No activity logs found.", margin, y);
+      y += 6;
+    }
+
+    // Footer
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.text(`Page ${i} of ${pageCount} - Portability data for ${user.email}`, 105, 285, { align: "center" });
+    }
+
+    doc.save(`portability_report_${userId}.pdf`);
+  };
+
+  const handleExportUserData = async () => {
+    if (!portabilityId.trim()) return;
+    setIsPortabilityLoading(true);
+    try {
+      console.log("🛠️ Starting Portability Export for:", portabilityId);
+      let userId = portabilityId;
+      // If it looks like an email, find UID first
+      if (portabilityId.includes('@')) {
+        console.log("🔍 Searching for user by email...");
+        const users = await queryDocs<UserProfile>('users', [where('email', '==', portabilityId)]);
+        if (users.length === 0) {
+          alert('User not found with this email.');
+          setIsPortabilityLoading(false);
+          return;
+        }
+        userId = users[0].id || users[0].uid;
+        console.log("✅ User found. UID:", userId);
+      } else {
+        // Verify user exists by ID
+        console.log("🔍 Verifying user by ID...");
+        const userDoc = await getDocument<UserProfile>('users', userId);
+        if (!userDoc) {
+          alert('User not found with this ID.');
+          setIsPortabilityLoading(false);
+          return;
+        }
+      }
+
+      console.log("📦 Fetching related data (Regs, Logs, Certs)...");
+      const [regs, logs, certs] = await Promise.all([
+        queryDocs<Registration>('registrations', [where('userId', '==', userId)]),
+        queryDocs<ActivityLog>('activityLogs', [where('actorId', '==', userId)]),
+        queryDocs<Certificate>('certificates', [where('userId', '==', userId)]),
+      ]);
+      console.log(`✅ Data fetched. Regs: ${regs.length}, Logs: ${logs.length}, Certs: ${certs.length}`);
+
+      if (portabilityFormat === 'PDF') {
+        // Generate PDF
+        console.log("📄 Generating PDF Report...");
+        const userDoc = await getDocument<UserProfile>('users', userId);
+        if (userDoc) {
+          generatePortabilityPDF(userId, userDoc, regs, logs, certs);
+        }
+      } else {
+        // Export JSON
+        console.log("📦 Exporting JSON Data...");
+        const exportData = {
+          metadata: {
+            exportedAt: new Date().toISOString(),
+            userId: userId,
+            explanation: "Combined portability report (GDPR) for all campus event activities."
+          },
+          registrations: regs,
+          activity: logs,
+          certificates: certs
+        };
+
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `portability_${userId}_${new Date().getTime()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+      
+      console.log("🎉 Export successful!");
+      setIsPortabilityLoading(false);
+      
+      if (profile) {
+        logActivity(profile.uid, profile.name || profile.email, 'admin', 'export_portability', userId, 'user', portabilityId);
+      }
+    } catch (err: any) {
+      console.error("❌ Portability Export Failed:", err);
+      alert('Export failed: ' + (err.code || err.message || 'Unknown permission error'));
+      setIsPortabilityLoading(false);
+    }
+  };
+
+  const handlePurgeArchived = async () => {
+    if (!confirm('⚠️ WARNING: This will PERMANENTLY delete all archived registrations. This action cannot be undone! \n\nAre you absolutely sure?')) return;
+    setPurging(true);
+    setPurgeLog(['🔥 Starting permanent purge...']);
+
+    try {
+      const allRegs = await queryDocs<Registration>('registrations', []);
+      const toPurge = allRegs.filter(r => r.archived);
+      
+      if (toPurge.length === 0) {
+        setPurgeLog(prev => [...prev, '✅ No archived records found to purge.']);
+        setPurging(false);
+        return;
+      }
+
+      setPurgeLog(prev => [...prev, `🗑️ Found ${toPurge.length} record(s) to delete.`]);
+      for (const reg of toPurge) {
+        await deleteDocument('registrations', reg.id);
+      }
+      
+      if (profile) await logActivity(profile.uid, profile.name, 'admin', 'data_purge', 'multi', 'system', `Purged ${toPurge.length} archived registrations`);
+      setPurgeLog(prev => [...prev, `🎉 Successfully deleted ${toPurge.length} records from history.`]);
+      fetchStats();
+    } catch (err: any) {
+      setPurgeLog(prev => [...prev, `❌ Error: ${err.message}`]);
+    } finally {
+      setPurging(false);
+    }
+  };
+
+  const handleRollbackArchive = async () => {
+    if (!rollbackYear.trim() || !confirm(`Undo archival for cycle "${rollbackYear}"? \n\nThis will restore events and registrations to active state.`)) return;
+    setRollingBack(true);
+    setRollbackLog([`⏪ Rolling back archival for ${rollbackYear}...`]);
+
+    try {
+      const allEvents = await queryDocs<CampusEvent>('events', [where('academicYear', '==', rollbackYear)]);
+      const archivedEvents = allEvents.filter(e => e.archived);
+
+      if (archivedEvents.length === 0) {
+        setRollbackLog(prev => [...prev, 'ℹ️ No archived events found for this cycle.']);
+        setRollingBack(false);
+        return;
+      }
+
+      const allRegs = await queryDocs<Registration>('registrations', []);
+      for (const event of archivedEvents) {
+        await updateDocument('events', event.id, { archived: false });
+        const eventRegs = allRegs.filter(r => r.eventId === event.id && r.archived);
+        for (const reg of eventRegs) {
+          await updateDocument('registrations', reg.id, { archived: false });
+        }
+        setRollbackLog(prev => [...prev, `   Restored "${event.title}" and its registrations.`]);
+      }
+
+      if (profile) await logActivity(profile.uid, profile.name, 'admin', 'archive_rollback', rollbackYear, 'system', `Rolled back archival for ${archivedEvents.length} events`);
+      setRollbackLog(prev => [...prev, `🎉 Successfully restored ${archivedEvents.length} events from cycle ${rollbackYear}!`]);
+      fetchAllEvents();
+      fetchStats();
+    } catch (err: any) {
+      setRollbackLog(prev => [...prev, `❌ Error: ${err.message}`]);
+    } finally {
+      setRollingBack(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-black uppercase italic tracking-tight underline decoration-[4px] decoration-teal-400 underline-offset-4">Data Management</h2>
+      
+      {/* System Health Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Active Events', val: stats.activeEvents, color: 'bg-green-100' },
+          { label: 'Archived Events', val: stats.archivedEvents, color: 'bg-blue-100' },
+          { label: 'Total Regs', val: stats.registrations, color: 'bg-yellow-100' },
+          { label: 'Cold Storage', val: stats.archivedRegs, color: 'bg-indigo-100' },
+        ].map((s, i) => (
+          <BrutalCard key={i} className={`p-4 ${s.color} border-b-[4px]`}>
+            <p className="text-[8px] font-black uppercase opacity-50">{s.label}</p>
+            <p className="text-xl font-black italic">{s.val}</p>
+          </BrutalCard>
+        ))}
+      </div>
+
+      {/* Cycle Configuration */}
+      <BrutalCard className="p-5 border-b-[6px] border-l-[6px] border-l-indigo-600 bg-indigo-50/20">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 border-[2px] border-black rounded-2xl bg-indigo-400 flex items-center justify-center text-xl shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">📅</div>
+            <div>
+              <h3 className="font-black uppercase text-sm italic text-indigo-700">Active Academic Year</h3>
+              <p className="text-[10px] font-bold opacity-60">Set the default cycle for all new event records.</p>
+            </div>
+          </div>
+          <div className="flex gap-2 w-full md:w-auto">
+            <BrutalInput 
+              placeholder="e.g. 2025-26" 
+              value={localLegal.currentAcademicYear} 
+              onChange={e => setLocalLegal({ ...localLegal, currentAcademicYear: e.target.value })}
+              className="text-[10px] font-black italic bg-white w-full md:w-48"
+            />
+            <BrutalButton color="#4F46E5" className="px-6 py-2 text-[10px] text-white shrink-0 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all" onClick={handleSaveLegal} disabled={saving}>
+              {saving ? '...' : 'Update Cycle'}
+            </BrutalButton>
+          </div>
+        </div>
+      </BrutalCard>
+
       <BrutalCard className="p-6 space-y-5 border-b-[6px]">
+        {/* ... existing Legal Content ... */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <div>
             <h3 className="font-black uppercase text-sm italic">Legal Content Management</h3>
@@ -3242,35 +3678,153 @@ export function DataManagementPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <BrutalCard className="p-6 border-b-[6px] space-y-4">
-          <h3 className="font-black uppercase text-sm italic">Seed Database</h3>
-          <p className="text-[10px] font-bold opacity-60">Populate venues and sample data for testing.</p>
-          {seedResult && <div className="bg-yellow-100 border-[2px] border-yellow-500 rounded-xl p-2"><span className="text-[9px] font-black">{seedResult}</span></div>}
-          <BrutalButton color={COLORS.yellow} className="w-full py-3" onClick={handleSeed} disabled={seeding}>
-            <Database className="w-4 h-4" /> {seeding ? 'Seeding...' : 'Seed Now'}
-          </BrutalButton>
-        </BrutalCard>
-        <BrutalCard className="p-6 border-b-[6px] space-y-4">
           <h3 className="font-black uppercase text-sm italic">Export Events</h3>
-          <p className="text-[10px] font-bold opacity-60">Export all events as JSON ({events.length} events).</p>
-          <BrutalButton color={COLORS.teal} className="w-full py-3" onClick={exportEvents}>
-            <FileText className="w-4 h-4" /> Export JSON
-          </BrutalButton>
+          <p className="text-[10px] font-bold opacity-60">Export all events as JSON or PDF summary ({events.length} events).</p>
+          <div className="flex gap-2">
+            <select 
+              value={eventsExportFormat} 
+              onChange={e => setEventsExportFormat(e.target.value as 'JSON' | 'PDF')}
+              className="text-[10px] font-black uppercase italic border-[2px] border-black rounded-xl px-2 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none"
+            >
+              <option value="PDF">PDF Summary</option>
+              <option value="JSON">JSON Data</option>
+            </select>
+            <BrutalButton color={COLORS.teal} className="w-full py-3" onClick={exportEvents}>
+              <Download className="w-4 h-4" /> {eventsExportFormat === 'PDF' ? 'Download PDF' : 'Download JSON'}
+            </BrutalButton>
+          </div>
+        </BrutalCard>
+
+        {/* User Data Portability (GDPR) */}
+        <BrutalCard className="p-6 border-b-[6px] space-y-4 border-l-[6px] border-l-pink-500">
+          <h3 className="font-black uppercase text-sm italic text-pink-700">🛡️ User Portability (GDPR)</h3>
+          <p className="text-[10px] font-bold opacity-60">Export all history, logs, and registrations for a specific user.</p>
+          <div className="flex gap-2">
+            <select 
+              value={portabilityFormat} 
+              onChange={e => setPortabilityFormat(e.target.value as 'JSON' | 'PDF')}
+              className="text-[10px] font-black uppercase italic border-[2px] border-black rounded-xl px-2 bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] outline-none"
+            >
+              <option value="PDF">PDF Report</option>
+              <option value="JSON">JSON Data</option>
+            </select>
+            <BrutalInput 
+              placeholder="Enter User UID or Email" 
+              value={portabilityId} 
+              onChange={e => setPortabilityId(e.target.value)} 
+              className="text-[10px] py-2"
+            />
+            <BrutalButton color="#EC4899" className="text-[10px] px-4 text-white shrink-0" onClick={handleExportUserData} disabled={isPortabilityLoading || !portabilityId}>
+              <Download className="w-4 h-4" /> {isPortabilityLoading ? '...' : 'Export'}
+            </BrutalButton>
+          </div>
         </BrutalCard>
 
         {/* Clean Duplicate Registrations */}
-        <BrutalCard className="p-6 border-b-[6px] space-y-4 lg:col-span-2 border-l-[6px] border-l-red-500">
+        <BrutalCard className="p-6 border-b-[6px] space-y-4 lg:col-span-1 border-l-[6px] border-l-orange-500">
           <div className="flex justify-between items-start">
             <div>
-              <h3 className="font-black uppercase text-sm italic text-red-700">🧹 Clean Duplicate Registrations</h3>
-              <p className="text-[10px] font-bold opacity-60">Find students registered multiple times to the same event, keep oldest, cancel duplicates, and fix participant counts.</p>
+              <h3 className="font-black uppercase text-sm italic text-orange-700">🧹 Cleanup</h3>
+              <p className="text-[10px] font-bold opacity-60">Find and fix duplicate registrations.</p>
             </div>
-            <BrutalButton color={COLORS.red} className="px-5 py-2 text-[10px] shrink-0" onClick={handleCleanDuplicates} disabled={cleaning}>
-              {cleaning ? 'Cleaning...' : 'Run Cleanup'}
+            <BrutalButton color={COLORS.yellow} className="px-5 py-2 text-[10px] shrink-0" onClick={handleCleanDuplicates} disabled={cleaning}>
+              {cleaning ? '...' : 'Run'}
             </BrutalButton>
           </div>
           {cleanLog.length > 0 && (
-            <div className="bg-slate-900 text-green-400 font-mono text-[9px] rounded-xl p-4 space-y-1 max-h-48 overflow-y-auto border-[2px] border-black">
+            <div className="bg-slate-900 text-green-400 font-mono text-[8px] rounded-xl p-3 max-h-32 overflow-y-auto border-[2px] border-black">
               {cleanLog.map((line, i) => <div key={i}>{line}</div>)}
+            </div>
+          )}
+        </BrutalCard>
+
+        {/* Archive Academic Cycle */}
+        <BrutalCard className="p-6 border-b-[6px] space-y-4 lg:col-span-1 border-l-[6px] border-l-blue-500">
+          <div className="flex justify-between items-start gap-4">
+            <div className="flex-1">
+              <h3 className="font-black uppercase text-sm italic text-blue-700">📁 Archive Cycle</h3>
+              <p className="text-[10px] font-bold opacity-60">Mark completed events and registrations as archived.</p>
+              <div className="mt-3 flex gap-2">
+                <BrutalInput 
+                  placeholder="e.g., 2025-26" 
+                  value={archiveYear} 
+                  onChange={e => setArchiveYear(e.target.value)} 
+                  className="text-[10px] py-1.5"
+                />
+                <BrutalButton color="#3B82F6" className="text-[10px] px-4 text-white" onClick={handleArchiveCycle} disabled={archiving || !archiveYear}>
+                  {archiving ? '...' : 'Archive'}
+                </BrutalButton>
+              </div>
+            </div>
+          </div>
+          {archiveLog.length > 0 && (
+            <div className="bg-slate-900 text-blue-300 font-mono text-[8px] rounded-xl p-3 max-h-32 overflow-y-auto border-[2px] border-black">
+              {archiveLog.map((line, i) => <div key={i}>{line}</div>)}
+            </div>
+          )}
+        </BrutalCard>
+
+        {/* Cold Storage Migration */}
+        <BrutalCard className="p-6 border-b-[6px] space-y-4 lg:col-span-1 border-l-[6px] border-l-indigo-500 bg-indigo-50/30">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="font-black uppercase text-sm italic text-indigo-700">🧊 Cold Storage Lifecycle</h3>
+              <p className="text-[10px] font-bold opacity-60">Identify registrations &gt; 2 years for archival.</p>
+            </div>
+            <BrutalButton color="#6366F1" className="px-4 py-2 text-[10px] text-white shrink-0" onClick={handleColdStorageMigration} disabled={migrating}>
+              {migrating ? '...' : 'Scan'}
+            </BrutalButton>
+          </div>
+          {migrationLog.length > 0 && (
+            <div className="bg-slate-900 text-indigo-300 font-mono text-[8px] rounded-xl p-3 max-h-32 overflow-y-auto border-[2px] border-black">
+              {migrationLog.map((line, i) => <div key={i}>{line}</div>)}
+            </div>
+          )}
+        </BrutalCard>
+
+        {/* Archive Rollback */}
+        <BrutalCard className="p-6 border-b-[6px] space-y-4 lg:col-span-1 border-l-[6px] border-l-slate-500 bg-slate-50">
+          <div className="flex justify-between items-start gap-4">
+            <div className="flex-1">
+              <h3 className="font-black uppercase text-sm italic text-slate-700">🔄 Archive Rollback</h3>
+              <p className="text-[10px] font-bold opacity-60">Restore archived events for a specific year.</p>
+              <div className="mt-3 flex gap-2">
+                <BrutalInput 
+                  placeholder="Academic Year" 
+                  value={rollbackYear} 
+                  onChange={e => setRollbackYear(e.target.value)} 
+                  className="text-[10px] py-1.5"
+                />
+                <BrutalButton color="#64748b" className="text-[10px] px-4 text-white" onClick={handleRollbackArchive} disabled={rollingBack || !rollbackYear}>
+                  <RotateCcw className="w-4 h-4" /> {rollingBack ? '...' : 'Restore'}
+                </BrutalButton>
+              </div>
+            </div>
+          </div>
+          {rollbackLog.length > 0 && (
+            <div className="bg-slate-900 text-slate-300 font-mono text-[8px] rounded-xl p-3 max-h-32 overflow-y-auto border-[2px] border-black">
+              {rollbackLog.map((line, i) => <div key={i}>{line}</div>)}
+            </div>
+          )}
+        </BrutalCard>
+
+        {/* Data Purge (Permanent) */}
+        <BrutalCard className="p-6 border-b-[6px] space-y-4 lg:col-span-2 border-l-[6px] border-l-red-600 bg-red-50">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <ShieldAlert className="w-8 h-8 text-red-600" />
+              <div>
+                <h3 className="font-black uppercase text-sm italic text-red-700">🔥 Permanent Data Purge</h3>
+                <p className="text-[10px] font-bold opacity-60 italic text-red-600">DANGER: Permanent deletion of all archived registration records.</p>
+              </div>
+            </div>
+            <BrutalButton color="#dc2626" className="px-8 py-3 text-[10px] text-white shrink-0 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all" onClick={handlePurgeArchived} disabled={purging}>
+              <Trash2 className="w-4 h-4" /> {purging ? 'Purging...' : 'Purge All Archived Data'}
+            </BrutalButton>
+          </div>
+          {purgeLog.length > 0 && (
+            <div className="bg-slate-900 text-red-400 font-mono text-[8px] rounded-xl p-3 max-h-32 overflow-y-auto border-[2px] border-black">
+              {purgeLog.map((line, i) => <div key={i}>{line}</div>)}
             </div>
           )}
         </BrutalCard>

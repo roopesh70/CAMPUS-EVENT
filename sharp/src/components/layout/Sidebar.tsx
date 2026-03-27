@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Compass, X, LogOut, LogIn } from 'lucide-react';
+import { Compass, X, LogOut, LogIn, QrCode } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,7 +9,7 @@ import { NAV_CONFIG } from '@/lib/constants';
 
 export function Sidebar() {
   const { isAuthenticated, profile, role } = useAuthStore();
-  const { activeTab, sidebarOpen, setActiveTab, setSidebarOpen } = useUIStore();
+  const { activeTab, sidebarOpen, setActiveTab, setSidebarOpen, setShowQR } = useUIStore();
   const { logout } = useAuth();
 
   // Determine which nav to show based on real role

@@ -1,14 +1,14 @@
 'use client';
 
 import React from 'react';
-import { Menu, Search, Bell } from 'lucide-react';
+import { Menu, Search, Bell, QrCode } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotifications } from '@/hooks/useNotifications';
 import { BrutalInput } from '@/components/ui/BrutalInput';
 
 export function Topbar() {
-  const { activeTab, toggleSidebar, setActiveTab, goBack } = useUIStore();
+  const { activeTab, toggleSidebar, setActiveTab, goBack, setShowQR } = useUIStore();
   const { profile, role, isAuthenticated } = useAuthStore();
   const { unreadCount } = useNotifications(profile?.uid);
 
@@ -42,6 +42,15 @@ export function Topbar() {
                 {profile.name || 'User'}
               </span>
             </div>
+            {role === 'student' && (
+              <button
+                onClick={() => setShowQR(true)}
+                title="Quick QR Ticket"
+                className="p-1.5 border-[2.5px] border-black rounded-lg hover:bg-yellow-400 transition-all bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none"
+              >
+                <QrCode className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={handleBellClick}
               className="relative p-1.5 border-[2.5px] border-black rounded-lg hover:bg-teal-400 transition-all bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none"

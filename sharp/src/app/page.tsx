@@ -29,6 +29,7 @@ import {
   AdminCertificateTemplates,
 } from '@/components/views/AllViews';
 import { AuthPageView } from '@/components/views/AuthPageView';
+import { GlobalQRModal } from '@/components/ui/GlobalQRModal';
 
 function PublicView({ tab }: { tab: string }) {
   if (tab === 'home') return <PublicHome />;
@@ -172,6 +173,7 @@ export default function HomePage() {
           </div>
         </div>
       </main>
+      {navRole === 'student' && <GlobalQRModal />}
     </div>
   );
 }

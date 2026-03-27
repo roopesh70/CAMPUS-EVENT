@@ -70,6 +70,8 @@ export interface CampusEvent {
   budget?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  archived?: boolean;
+  academicYear?: string;
 }
 
 /* ===== Venues ===== */
@@ -99,6 +101,7 @@ export interface Registration {
   attendanceStatus: AttendanceStatus;
   feedbackSubmitted: boolean;
   registrationId: string;
+  archived?: boolean;
 }
 
 /* ===== Certificates ===== */
@@ -225,7 +228,7 @@ export interface Feedback {
 }
 
 /* ===== Activity Logs ===== */
-export type EntityType = 'event' | 'user' | 'venue' | 'certificate' | 'registration';
+export type EntityType = 'event' | 'user' | 'venue' | 'certificate' | 'registration' | 'system';
 
 export interface ActivityLog {
   id: string;
@@ -249,6 +252,7 @@ export interface SystemSettings {
   allowAnonymousFeedback: boolean;
   eventCategories?: { id: string; name: string; isActive: boolean }[];
   restrictedRoles?: string[];
+  currentAcademicYear?: string;
   updatedAt?: Timestamp;
   // Social Links
   /** Full absolute URL to Twitter/X profile (e.g., https://x.com/username) */

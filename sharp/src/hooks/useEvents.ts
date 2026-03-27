@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
-  queryDocs, addDocument, updateDocument, getDocument, deleteDocument,
-  listenToCollection, where, orderBy, limit, serverTimestamp, increment,
-  doc, db,
+  queryDocs, updateDocument, getDocument, deleteDocument,
+  listenToCollection, where, orderBy, serverTimestamp,
+  doc, db
 } from '@/lib/firestore';
-import { updateDoc, runTransaction, query, collection } from 'firebase/firestore';
+import { runTransaction, query, collection, getDoc, getDocs } from 'firebase/firestore';
 import { uploadFile } from '@/lib/storage';
 import { isTimeOverlapping } from '@/lib/utils';
 import type { CampusEvent, EventStatus } from '@/types';
@@ -16,50 +16,55 @@ export function useEvents() {
   const [loading, setLoading] = useState(true);
 
   // Fetch all approved/public events
-  const fetchPublicEvents = useCallback(async () => {
+  const fetchPublicEvents = useCallback(async (includeArchived = false) => {
     setLoading(true);
-    const data = await queryDocs<CampusEvent>('events', [
+    const constraints: any[] = [
       where('status', '==', 'approved'),
       orderBy('startTime', 'asc'),
-    ]);
-    setEvents(data);
+    ];
+    const data = await queryDocs<CampusEvent>('events', constraints);
+    const filtered = includeArchived ? data : data.filter(e => !e.archived);
+    setEvents(filtered);
     setLoading(false);
-    return data;
+    return filtered;
   }, []);
 
   // Fetch events by organizer
-  const fetchOrganizerEvents = useCallback(async (organizerId: string) => {
+  const fetchOrganizerEvents = useCallback(async (organizerId: string, includeArchived = false) => {
     setLoading(true);
     const data = await queryDocs<CampusEvent>('events', [
       where('organizerId', '==', organizerId),
       orderBy('createdAt', 'desc'),
     ]);
-    setEvents(data);
+    const filtered = includeArchived ? data : data.filter(e => !e.archived);
+    setEvents(filtered);
     setLoading(false);
-    return data;
+    return filtered;
   }, []);
 
   // Fetch events by status (for admin)
-  const fetchEventsByStatus = useCallback(async (status: EventStatus) => {
+  const fetchEventsByStatus = useCallback(async (status: EventStatus, includeArchived = false) => {
     setLoading(true);
     const data = await queryDocs<CampusEvent>('events', [
       where('status', '==', status),
       orderBy('createdAt', 'desc'),
     ]);
-    setEvents(data);
+    const filtered = includeArchived ? data : data.filter(e => !e.archived);
+    setEvents(filtered);
     setLoading(false);
-    return data;
+    return filtered;
   }, []);
 
   // Fetch all events (admin)
-  const fetchAllEvents = useCallback(async () => {
+  const fetchAllEvents = useCallback(async (includeArchived = true) => {
     setLoading(true);
     const data = await queryDocs<CampusEvent>('events', [
       orderBy('createdAt', 'desc'),
     ]);
-    setEvents(data);
+    const filtered = includeArchived ? data : data.filter(e => !e.archived);
+    setEvents(filtered);
     setLoading(false);
-    return data;
+    return filtered;
   }, []);
 
   // Get single event
@@ -74,37 +79,28 @@ export function useEvents() {
     const eventType = data.eventType || 'PHYSICAL';
     let docRefId = '';
 
-    await runTransaction(db, async (transaction) => {
-      // 1. Double-Booking Validation
-      if (eventType === 'PHYSICAL' && data.venueId) {
-        // Find events in the same venue that are PHYSICAL and not draft/rejected
-        const eventsRef = collection(db, 'events');
-        const q = query(eventsRef, where('venueId', '==', data.venueId));
-        // @ts-ignore - firebase/firestore transaction.get supports query, but types might be outdated
-        const querySnapshot = await transaction.get(q) as any;
+    // 1. Double-Booking Validation (Outside transaction)
+    if (eventType === 'PHYSICAL' && data.venueId) {
+      const q = query(collection(db, 'events'), where('venueId', '==', data.venueId), where('status', '==', 'approved'));
+      const querySnapshot = await getDocs(q);
 
-        const newStart = data.startTime.toMillis();
-        const newEnd = data.endTime.toMillis();
+      const newStart = data.startTime.toMillis();
+      const newEnd = data.endTime.toMillis();
 
-        for (const docSnap of querySnapshot.docs) {
-          const evt = docSnap.data() as CampusEvent;
-          // Only block if the overlapping event is actually APPROVED
-          if (evt.status !== 'approved') continue;
-          if (evt.eventType === 'ONLINE') continue;
-
-          const eStart = evt.startTime.toMillis();
-          const eEnd = evt.endTime.toMillis();
-
-          if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
-            throw new Error("Venue already booked for this time slot");
-          }
+      for (const docSnap of querySnapshot.docs) {
+        const evt = docSnap.data() as CampusEvent;
+        if (evt.eventType === 'ONLINE') continue;
+        const eStart = evt.startTime.toMillis();
+        const eEnd = evt.endTime.toMillis();
+        if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
+          throw new Error("Venue already booked for this time slot");
         }
       }
+    }
 
-      // Generate a new reference
+    await runTransaction(db, async (transaction) => {
       const newDocRef = doc(collection(db, 'events'));
       docRefId = newDocRef.id;
-
       transaction.set(newDocRef, {
         ...data,
         eventType,
@@ -116,57 +112,47 @@ export function useEvents() {
       });
     });
 
-    let posterUrl = '';
     if (posterFile) {
-      posterUrl = await uploadFile(`events/${docRefId}/poster.${posterFile.name.split('.').pop()}`, posterFile);
+      const posterUrl = await uploadFile(`events/${docRefId}/poster.${posterFile.name.split('.').pop()}`, posterFile);
       await updateDocument('events', docRefId, { posterUrl });
     }
 
     return docRefId;
   }, []);
 
-  // Update event status (admin approve/reject)
   const updateEventStatus = useCallback(async (
     eventId: string,
     status: EventStatus,
     comment?: string
   ) => {
-    await runTransaction(db, async (transaction) => {
-      const eventRef = doc(db, 'events', eventId);
-      const currentEventSnap = await transaction.get(eventRef);
-      if (!currentEventSnap.exists()) throw new Error("Event not found");
-      const currentEvent = currentEventSnap.data() as CampusEvent;
+    // 1. Double-Booking Check (Outside transaction)
+    if (status === 'approved') {
+      const snap = await getDoc(doc(db, 'events', eventId));
+      if (!snap.exists()) throw new Error("Event not found");
+      const currentEvent = snap.data() as CampusEvent;
 
-      // If approving, strictly enforce double-booking prevention against other approved events
-      if (status === 'approved') {
-        if (currentEvent.eventType === 'PHYSICAL' && currentEvent.venueId) {
-          const eventsRef = collection(db, 'events');
-          const q = query(
-            eventsRef,
-            where('venueId', '==', currentEvent.venueId),
-            where('status', '==', 'approved')
-          );
-          // @ts-ignore - firebase/firestore transaction.get supports query, but types might be outdated
-          const existingEventsSnap = await transaction.get(q) as any;
+      if (currentEvent.eventType === 'PHYSICAL' && currentEvent.venueId) {
+        const q = query(collection(db, 'events'), where('venueId', '==', currentEvent.venueId), where('status', '==', 'approved'));
+        const existingEventsSnap = await getDocs(q);
 
-          const newStart = currentEvent.startTime.toMillis();
-          const newEnd = currentEvent.endTime.toMillis();
+        const newStart = currentEvent.startTime.toMillis();
+        const newEnd = currentEvent.endTime.toMillis();
 
-          for (const docSnap of existingEventsSnap.docs) {
-            if (docSnap.id === eventId) continue;
-            const evt = docSnap.data() as CampusEvent;
-            if (evt.eventType === 'ONLINE') continue;
-
-            const eStart = evt.startTime.toMillis();
-            const eEnd = evt.endTime.toMillis();
-
-            if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
-              throw new Error(`Venue is already allotted to "${evt.title}" for this time slot.`);
-            }
+        for (const docSnap of existingEventsSnap.docs) {
+          if (docSnap.id === eventId) continue;
+          const evt = docSnap.data() as CampusEvent;
+          if (evt.eventType === 'ONLINE') continue;
+          const eStart = evt.startTime.toMillis();
+          const eEnd = evt.endTime.toMillis();
+          if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
+            throw new Error(`Venue is already allotted to "${evt.title}" for this time slot.`);
           }
         }
       }
+    }
 
+    await runTransaction(db, async (transaction) => {
+      const eventRef = doc(db, 'events', eventId);
       transaction.update(eventRef, {
         status,
         ...(comment ? { approvalComment: comment } : {}),
@@ -175,59 +161,46 @@ export function useEvents() {
     });
   }, []);
 
-  // Update event data
   const updateEvent = useCallback(async (
     eventId: string,
     data: Partial<CampusEvent>
   ) => {
-    await runTransaction(db, async (transaction) => {
-      const eventRef = doc(db, 'events', eventId);
-      const currentEventSnap = await transaction.get(eventRef);
-      if (!currentEventSnap.exists()) throw new Error("Event not found");
-      const currentEvent = currentEventSnap.data() as CampusEvent;
+    // 1. Double-Booking Check (Outside transaction)
+    const snap = await getDoc(doc(db, 'events', eventId));
+    if (!snap.exists()) throw new Error("Event not found");
+    const currentEvent = snap.data() as CampusEvent;
 
-      const eventType = data.eventType !== undefined ? data.eventType : (currentEvent.eventType || 'PHYSICAL');
-      const venueId = data.venueId !== undefined ? data.venueId : currentEvent.venueId;
+    const eventType = data.eventType !== undefined ? data.eventType : (currentEvent.eventType || 'PHYSICAL');
+    const venueId = data.venueId !== undefined ? data.venueId : currentEvent.venueId;
 
-      if (eventType === 'PHYSICAL' && venueId) {
-        const eventsRef = collection(db, 'events');
-        const q = query(eventsRef, where('venueId', '==', venueId));
-        // @ts-ignore - firebase/firestore transaction.get supports query, but types might be outdated
-        const querySnapshot = await transaction.get(q) as any;
+    if (eventType === 'PHYSICAL' && venueId) {
+      const q = query(collection(db, 'events'), where('venueId', '==', venueId), where('status', '==', 'approved'));
+      const querySnapshot = await getDocs(q);
 
-        const newStart = data.startTime ? data.startTime.toMillis() : currentEvent.startTime.toMillis();
-        const newEnd = data.endTime ? data.endTime.toMillis() : currentEvent.endTime.toMillis();
+      const newStart = data.startTime ? data.startTime.toMillis() : currentEvent.startTime.toMillis();
+      const newEnd = data.endTime ? data.endTime.toMillis() : currentEvent.endTime.toMillis();
 
-        for (const docSnap of querySnapshot.docs) {
-          if (docSnap.id === eventId) continue; // skip self
-          const evt = docSnap.data() as CampusEvent;
-          if (evt.status !== 'approved') continue; // Only block on APPROVED events
-          if (evt.eventType === 'ONLINE') continue;
-
-          const eStart = evt.startTime.toMillis();
-          const eEnd = evt.endTime.toMillis();
-
-          if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
-            throw new Error("Venue already booked for this time slot");
-          }
+      for (const docSnap of querySnapshot.docs) {
+        if (docSnap.id === eventId) continue;
+        const evt = docSnap.data() as CampusEvent;
+        if (evt.eventType === 'ONLINE') continue;
+        const eStart = evt.startTime.toMillis();
+        const eEnd = evt.endTime.toMillis();
+        if (isTimeOverlapping(newStart, newEnd, eStart, eEnd)) {
+          throw new Error("Venue already booked for this time slot");
         }
       }
+    }
 
-      transaction.update(eventRef, {
-        ...data,
-        updatedAt: serverTimestamp(),
-      });
-    });
+    await updateDocument('events', eventId, data);
   }, []);
 
-  // Delete event
   const deleteEvent = useCallback(async (eventId: string) => {
     await deleteDocument('events', eventId);
   }, []);
 
-  // Listen to events in real-time
   const subscribeToEvents = useCallback((
-    constraints: Parameters<typeof listenToCollection>[1] = [orderBy('startTime', 'asc')]
+    constraints: any[] = [orderBy('startTime', 'asc')]
   ) => {
     return listenToCollection<CampusEvent>('events', constraints, setEvents);
   }, []);

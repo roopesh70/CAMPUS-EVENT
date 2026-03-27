@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { CirclePlus, ChevronRight, MoreVertical } from 'lucide-react';
+import { CirclePlus, ChevronRight, MoreVertical, Activity, Shield, Zap, BarChart3, Clock, ArrowRight, Settings, Bell, MapPin, Users, CheckCircle, XCircle, MessageSquare, ClipboardList, QrCode, Award } from 'lucide-react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { BrutalInput } from '@/components/ui/BrutalInput';
@@ -12,105 +12,258 @@ import { useEvents } from '@/hooks/useEvents';
 import { useVenues } from '@/hooks/useVenues';
 import { useSettings } from '@/hooks/useSettings';
 import { useTasks } from '@/hooks/useTasks';
+import { useRegistrations } from '@/hooks/useRegistrations';
 import { useCloudinary } from '@/hooks/useCloudinary';
 import { useActivityLogs } from '@/hooks/useActivityLogs';
 import { useUIStore } from '@/stores/uiStore';
-import type { CampusEvent, EventCategory } from '@/types';
+import type { CampusEvent, EventCategory, Registration, EventTask } from '@/types';
 import { Timestamp } from 'firebase/firestore';
 
 export function OrganizerDashboard() {
   const { profile } = useAuthStore();
   const { events, fetchOrganizerEvents } = useEvents();
+  const { fetchOrganizerRegistrations, registrations } = useRegistrations();
+  const { tasks, fetchOrganizerTasks } = useTasks();
   const { setActiveTab } = useUIStore();
 
+  const [loadingRegs, setLoadingRegs] = useState(true);
+
   useEffect(() => {
-    if (profile?.uid) fetchOrganizerEvents(profile.uid);
-  }, [profile?.uid, fetchOrganizerEvents]);
+    if (profile?.uid) {
+      fetchOrganizerEvents(profile.uid).then((evts) => {
+        if (evts && evts.length > 0) {
+          const ids = evts.map(e => e.id);
+          fetchOrganizerRegistrations(ids).finally(() => setLoadingRegs(false));
+          fetchOrganizerTasks(ids);
+        } else {
+          setLoadingRegs(false);
+        }
+      });
+    }
+  }, [profile?.uid, fetchOrganizerEvents, fetchOrganizerRegistrations, fetchOrganizerTasks]);
 
   const active = events.filter(e => e.status === 'approved').length;
   const drafts = events.filter(e => e.status === 'draft').length;
   const completed = events.filter(e => e.status === 'completed').length;
   const pending = events.filter(e => e.status === 'pending' || e.status === 'revision').length;
 
+  const totalParticipants = events.reduce((acc, e) => acc + (e.attendanceCount || 0), 0);
+
   const statusCards = [
-    { status: 'Active', num: String(active).padStart(2, '0'), color: COLORS.teal },
-    { status: 'Drafts', num: String(drafts).padStart(2, '0'), color: COLORS.yellow },
-    { status: 'Completed', num: String(completed).padStart(2, '0'), color: COLORS.lavender },
-    { status: 'Review', num: String(pending).padStart(2, '0'), color: COLORS.pink },
+    { status: 'Active', num: String(active).padStart(2, '0'), color: COLORS.teal, icon: CheckCircle },
+    { status: 'Drafts', num: String(drafts).padStart(2, '0'), color: COLORS.yellow, icon: Clock },
+    { status: 'Completed', num: String(completed).padStart(2, '0'), color: COLORS.lavender, icon: Award },
+    { status: 'Review', num: String(pending).padStart(2, '0'), color: COLORS.pink, icon: Shield },
   ];
 
+  const quickActions = [
+    { label: 'New Event', icon: CirclePlus, tab: 'create', color: COLORS.yellow },
+    { label: 'Attendance', icon: QrCode, tab: 'attendance', color: COLORS.teal },
+    { label: 'Certificates', icon: Award, tab: 'certificates', color: COLORS.lavender },
+    { label: 'My Events', icon: ClipboardList, tab: 'my-events', color: COLORS.pink },
+  ];
+
+  const adminComments = events.filter(e => e.approvalComment && (e.status === 'pending' || e.status === 'revision')).slice(0, 3);
+  const recentRegs = registrations.slice(0, 5);
+  const pendingTasks = tasks.filter(t => t.status !== 'completed').slice(0, 4);
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-10 pb-12">
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
         <h2 className="text-3xl font-black uppercase tracking-tighter italic leading-none underline decoration-[4px] decoration-yellow-400 underline-offset-4">
-          Event Center
+          Organizer Hub
         </h2>
-        <BrutalButton color={COLORS.yellow} className="px-6 py-2 text-[10px]" onClick={() => setActiveTab('create')}>
-          <CirclePlus className="w-4 h-4" /> New Proposal
-        </BrutalButton>
+        <div className="flex items-center gap-2">
+           <Badge text={`${totalParticipants} Participants Served`} color={COLORS.teal} />
+        </div>
       </div>
 
+      {/* 1. Stat Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {statusCards.map((card, i) => (
+          <BrutalCard key={i} color={card.color} className="flex flex-col justify-between min-h-[140px] group border-b-[6px] border-black">
+            <div className="flex justify-between items-start">
+              <span className="text-4xl font-black italic tracking-tighter opacity-10 leading-none">{card.num}</span>
+              <card.icon className="w-5 h-5 opacity-40" />
+            </div>
+            <div className="flex justify-between items-end">
+              <span className="font-black uppercase text-sm leading-none tracking-tight">{card.status} Events</span>
+            </div>
+          </BrutalCard>
+        ))}
+      </div>
+
+      {/* 2. Quick Actions & Admin Feedback */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {statusCards.map((card, i) => (
-              <BrutalCard key={i} color={card.color} className="flex flex-col justify-between min-h-[140px] group border-b-[6px] border-b-black">
-                <div className="flex justify-between items-start">
-                  <span className="text-3xl font-black italic tracking-tighter opacity-10 leading-none">{card.num}</span>
-                  <Badge text={card.status} color="white" />
-                </div>
-                <div className="flex justify-between items-end">
-                  <span className="font-black uppercase text-md leading-none tracking-tight">{card.status} Events</span>
-                  <div className="w-8 h-8 bg-black text-white rounded-lg flex items-center justify-center group-hover:bg-white group-hover:text-black transition-all">
-                    <ChevronRight className="w-4 h-4" />
-                  </div>
-                </div>
-              </BrutalCard>
-            ))}
-          </div>
+          <BrutalCard className="p-5 border-b-[6px]">
+            <div className="flex items-center gap-2 mb-4">
+              <Zap className="w-4 h-4" />
+              <h3 className="text-[11px] font-black uppercase italic tracking-widest">Rapid Controls</h3>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {quickActions.map((action) => (
+                <button 
+                  key={action.tab}
+                  onClick={() => setActiveTab(action.tab)}
+                  className="group flex flex-col items-center gap-3 p-4 border-[2px] border-black rounded-xl bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all active:translate-x-1 active:translate-y-1"
+                  style={{ borderLeftColor: action.color, borderLeftWidth: '6px' }}
+                >
+                  <action.icon className="w-5 h-5 group-hover:scale-120 transition-transform" />
+                  <span className="text-[9px] font-black uppercase italic">{action.label}</span>
+                </button>
+              ))}
+            </div>
+          </BrutalCard>
 
-          {/* Performance */}
+          {/* Performance Flow (Upgraded) */}
           <div className="space-y-4">
-            <h3 className="text-lg font-black uppercase italic flex items-center gap-2">Performance Flow</h3>
-            <BrutalCard className="h-40 flex items-end justify-between p-6 gap-2 border-[2.5px] bg-white">
-              {events.slice(0, 9).map((e, i) => {
-                const pct = e.registeredCount > 0 ? Math.min(Math.round((e.registeredCount / Math.max(e.capacity, 1)) * 100), 100) : (10 + i * 10);
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-black uppercase italic flex items-center gap-2">
+                <BarChart3 className="w-5 h-5" /> Engagement Flow
+              </h3>
+              <div className="flex items-center gap-4 text-[8px] font-black uppercase opacity-40">
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-black rounded-sm" /> Registration</div>
+                <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-yellow-400 rounded-sm" /> Attendance</div>
+              </div>
+            </div>
+            <BrutalCard className="h-48 flex items-end justify-between p-6 px-10 gap-6 border-[2.5px] border-b-[6px] bg-white overflow-hidden relative">
+              {events.slice(0, 8).map((e, i) => {
+                const regPct = e.capacity > 0 ? Math.min(Math.round((e.registeredCount / e.capacity) * 100), 100) : 0;
+                const attPct = e.registeredCount > 0 ? Math.min(Math.round(((e.attendanceCount || 0) / e.registeredCount) * 100), 100) : 0;
+                
                 return (
-                  <div key={i} className="flex-1 bg-black border-[1.5px] border-white group relative hover:bg-yellow-400 transition-all rounded-t-lg" style={{ height: `${pct}%` }}>
-                    <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-black text-white px-1.5 py-0.5 rounded text-[7px] opacity-0 group-hover:opacity-100 transition-opacity font-bold border border-white">
-                      {pct}%
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end group">
+                    <div className="flex gap-1 w-full h-full items-end justify-center">
+                      <div className="w-3 bg-black border-[1.5px] border-black rounded-t-sm transition-all group-hover:opacity-80 relative" style={{ height: `${regPct}%` }}>
+                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-black text-white px-1 py-0.5 rounded text-[6px] opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-nowrap">Reg: {regPct}%</div>
+                      </div>
+                      <div className="w-3 bg-yellow-400 border-[1.5px] border-black rounded-t-sm transition-all group-hover:bg-yellow-300 relative" style={{ height: `${attPct}%` }}>
+                         <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-yellow-400 border border-black text-black px-1 py-0.5 rounded text-[6px] opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-nowrap">Att: {attPct}%</div>
+                      </div>
                     </div>
+                    <span className="text-[6px] font-black uppercase truncate max-w-full italic opacity-20 group-hover:opacity-100 transition-opacity">{e.title}</span>
                   </div>
                 );
               })}
-              {events.length === 0 && Array.from({ length: 9 }).map((_, i) => (
-                <div key={i} className="flex-1 bg-slate-200 border-[1.5px] border-slate-300 rounded-t-lg" style={{ height: '20%' }} />
-              ))}
+              {events.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
+                  <p className="text-xl font-black uppercase italic tracking-tighter">No Active Data</p>
+                </div>
+              )}
             </BrutalCard>
           </div>
         </div>
 
-        {/* Recent Events */}
-        <div className="space-y-5">
-          <h3 className="text-lg font-black uppercase italic">Recent Events</h3>
-          <div className="space-y-3">
-            {events.length === 0 ? (
-              <BrutalCard className="p-4 text-center">
-                <p className="text-[10px] font-black uppercase italic opacity-30">No events yet. Create your first!</p>
-              </BrutalCard>
-            ) : (
-              events.slice(0, 3).map((evt, i) => (
-                <BrutalCard key={evt.id} className="border-l-[10px] border-l-black hover:translate-x-1 transition-all p-3">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-[7.5px] font-black uppercase opacity-30 italic">{evt.category}</span>
-                    <Badge text={evt.status} color={evt.status === 'approved' ? COLORS.green : evt.status === 'pending' ? COLORS.yellow : '#fff'} />
+        {/* Right Column: Admin Feedback & Tasks */}
+        <div className="space-y-6">
+          {/* Admin Feedback */}
+          {adminComments.length > 0 && (
+            <BrutalCard color={COLORS.pink} className="p-4 border-b-[6px] border-black shadow-none">
+              <div className="flex items-center gap-2 mb-3">
+                <MessageSquare className="w-4 h-4" />
+                <h3 className="text-[10px] font-black uppercase italic">Admin Feedback</h3>
+              </div>
+              <div className="space-y-3">
+                {adminComments.map((e) => (
+                  <div key={e.id} className="bg-white border-[2px] border-black rounded-xl p-3 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none transition-all cursor-pointer" onClick={() => setActiveTab('my-events')}>
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-[8px] font-black uppercase truncate flex-1 leading-none">{e.title}</span>
+                      <Badge text={e.status} color="black" className="text-white scale-75 origin-right" />
+                    </div>
+                    <p className="text-[9px] font-bold italic leading-tight text-pink-600">"{e.approvalComment}"</p>
                   </div>
-                  <h4 className="font-black uppercase text-[12px] italic tracking-tight leading-tight">{evt.title}</h4>
-                  <p className="text-[8px] font-bold opacity-40 mt-1">{evt.registeredCount}/{evt.capacity} registered</p>
-                </BrutalCard>
-              ))
-            )}
+                ))}
+              </div>
+            </BrutalCard>
+          )}
+
+          {/* Setup Tasks */}
+          <BrutalCard className="p-4 border-b-[6px] flex flex-col min-h-[250px]">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="w-4 h-4" />
+                <h3 className="text-[10px] font-black uppercase italic">Preparation List</h3>
+              </div>
+              <button onClick={() => setActiveTab('tasks')} className="text-[7px] font-black uppercase italic hover:underline">View All</button>
+            </div>
+            <div className="space-y-2 flex-grow">
+              {pendingTasks.length === 0 ? (
+                <div className="h-full flex flex-col justify-center items-center opacity-20 py-8">
+                   <CheckCircle className="w-8 h-8 mb-1" />
+                   <p className="text-[8px] font-black uppercase">All tasks done!</p>
+                </div>
+              ) : (
+                pendingTasks.map((task) => (
+                  <TaskItem key={task.id} task={task} />
+                ))
+              )}
+            </div>
+          </BrutalCard>
+        </div>
+      </div>
+
+      {/* 4. Recent Registrations Feed */}
+      <BrutalCard className="p-0 border-[2.5px] border-b-[8px]">
+        <div className="p-4 border-b-[2.5px] border-black bg-white flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            <h3 className="text-xs font-black uppercase italic tracking-widest">Recent Enrollments</h3>
           </div>
+          <Badge text={`${registrations.length} Total`} color={COLORS.yellow} />
+        </div>
+        <div className="max-h-[350px] overflow-y-auto bg-slate-50/30">
+          {loadingRegs ? (
+            <div className="p-10 text-center animate-pulse"><p className="text-[10px] font-black uppercase italic opacity-30">Loading participant data...</p></div>
+          ) : recentRegs.length === 0 ? (
+            <div className="p-12 text-center opacity-20">
+               <Users className="w-10 h-10 mx-auto mb-2" />
+               <p className="text-[10px] font-black uppercase italic">No active registrations for your events yet.</p>
+            </div>
+          ) : (
+            <div className="divide-y-[1px] divide-black divide-opacity-10">
+              {recentRegs.map((reg) => (
+                <div key={reg.id} className="p-4 hover:bg-white transition-colors flex items-center justify-between group">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 border-[2px] border-black rounded-lg flex items-center justify-center bg-white font-black text-xs shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] group-hover:scale-110 transition-transform overflow-hidden">
+                      {reg.userName[0]?.toUpperCase() || 'S'}
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-black uppercase italic">
+                        <span className="text-teal-600">{reg.userName}</span>
+                        <span className="mx-1.5 opacity-20">→</span>
+                        <span>{reg.eventTitle}</span>
+                      </div>
+                      <div className="text-[8px] font-bold opacity-40 mt-0.5 uppercase tracking-widest">
+                        {reg.userDepartment} {reg.userYear && `— YEAR ${reg.userYear}`}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[8px] font-black opacity-30 uppercase italic">
+                      {reg.registrationTime?.toDate ? reg.registrationTime.toDate().toLocaleString() : 'Just now'}
+                    </div>
+                    <Badge text={reg.status} color={reg.status === 'confirmed' ? COLORS.green : COLORS.yellow} className="mt-1" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </BrutalCard>
+    </div>
+  );
+}
+
+function TaskItem({ task }: { task: EventTask }) {
+  return (
+    <div className="flex items-center gap-3 p-3 bg-white border-[2px] border-black rounded-xl hover:translate-x-1 transition-all">
+      <div className={`w-3 h-3 border-[1.5px] border-black rounded-full ${task.status === 'completed' ? 'bg-green-400' : 'bg-slate-100'}`} />
+      <div className="flex-1 min-w-0">
+        <div className="text-[9px] font-black uppercase truncate italic">{task.title}</div>
+        <div className="flex items-center gap-1.5">
+           <Clock className="w-2 h-2 opacity-30" />
+           <span className="text-[7px] font-bold opacity-30 uppercase">{task.shiftEnd?.toDate ? task.shiftEnd.toDate().toLocaleDateString() : 'No deadline'}</span>
         </div>
       </div>
     </div>
@@ -130,7 +283,7 @@ export function CreateEventFlow() {
   const [conflict, setConflict] = useState<string | null>(null);
   const [alternatives, setAlternatives] = useState<string[]>([]);
 
-  // Form state — PRD 5.2.1 complete
+  // Form state complete
   const [eventType, setEventType] = useState<'PHYSICAL' | 'ONLINE'>('PHYSICAL');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -246,13 +399,14 @@ export function CreateEventFlow() {
         resources,
         posterUrl,
         approvalComment: '',
-        // PRD 5.2.1 new fields
+        // new fields
         targetAudience,
         expectedAttendance: parseInt(expectedAttendance) || 0,
         coOrganizers,
         contactEmail,
         contactPhone,
         budget,
+        academicYear: settings?.currentAcademicYear || '',
         ...(regDeadline ? { registrationDeadline: Timestamp.fromDate(new Date(`${regDeadline}T23:59`)) } : {}),
       });
 

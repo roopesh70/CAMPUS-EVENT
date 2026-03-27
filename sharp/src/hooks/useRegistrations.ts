@@ -163,6 +163,42 @@ export function useRegistrations() {
     return data;
   }, []);
 
+  // Fetch registrations for a specific organizer's events
+  const fetchOrganizerRegistrations = useCallback(async (eventIds: string[]) => {
+    if (eventIds.length === 0) return [];
+    setLoading(true);
+    
+    // Firestore 'in' query supports up to 10 elements. 
+    // If more, we'd need to chunk, but for dashboard recent feed, 10-30 eventIds is likely fine if we just take latest.
+    // For now, let's just fetch all registrations for these events and sort manually if needed, 
+    // or use chunked queries if eventIds.length > 10.
+    
+    const chunkedEventIds = [];
+    for (let i = 0; i < eventIds.length; i += 10) {
+      chunkedEventIds.push(eventIds.slice(i, i + 10));
+    }
+
+    const allRegs: Registration[] = [];
+    for (const chunk of chunkedEventIds) {
+      const data = await queryDocs<Registration>('registrations', [
+        where('eventId', 'in', chunk),
+        orderBy('registrationTime', 'desc'),
+      ]);
+      allRegs.push(...data);
+    }
+
+    // Final sort to ensure global descending order across all chunks
+    allRegs.sort((a, b) => {
+      const t1 = (a.registrationTime as any)?.seconds || 0;
+      const t2 = (b.registrationTime as any)?.seconds || 0;
+      return t2 - t1;
+    });
+
+    setRegistrations(allRegs);
+    setLoading(false);
+    return allRegs;
+  }, []);
+
   // Mark attendance
   const markAttendance = useCallback(async (
     regId: string,
@@ -208,7 +244,7 @@ export function useRegistrations() {
   return {
     registrations, loading,
     registerForEvent, cancelRegistration,
-    fetchUserRegistrations, fetchEventParticipants,
+    fetchUserRegistrations, fetchEventParticipants, fetchOrganizerRegistrations,
     markAttendance, checkRegistration,
   };
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Calendar, Award, BarChart2, Sparkles } from 'lucide-react';
+import { Calendar, Award, BarChart2, Sparkles, Ticket, Trophy, Zap, CheckCircle2, MessageSquare, ChevronRight, QrCode, XCircle } from 'lucide-react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { Badge } from '@/components/ui/Badge';
@@ -20,7 +20,7 @@ export function StudentDashboard() {
   const { events, fetchPublicEvents } = useEvents();
   const { registrations, fetchUserRegistrations, registerForEvent } = useRegistrations();
   const { notifications, createNotification } = useNotifications(profile?.uid);
-  const { setActiveTab } = useUIStore();
+  const { activeTab, setActiveTab, setShowQR } = useUIStore();
   const { settings } = useSettings();
   const [upcoming, setUpcoming] = useState<CampusEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
@@ -57,9 +57,10 @@ export function StudentDashboard() {
     const upcomingEvents = events.filter(e => {
       if (!e.startTime?.toDate) return false;
       return e.startTime.toDate() > now;
-    }).slice(0, 5);
+    }).slice(0, 10);
     setUpcoming(upcomingEvents);
   }, [events]);
+
 
   const handleOpenEvent = (evt: CampusEvent) => {
     setSelectedEvent(evt);
@@ -106,7 +107,7 @@ export function StudentDashboard() {
   const handleShare = async (evt: CampusEvent) => {
     const shareData = { title: evt.title, text: `Check out "${evt.title}" on SHARP!`, url: window.location.href };
     if (navigator.share) {
-      try { await navigator.share(shareData); } catch {}
+      try { await navigator.share(shareData); } catch { }
     } else {
       await navigator.clipboard.writeText(`${evt.title} — ${window.location.href}`);
       alert('Link copied to clipboard!');
@@ -209,17 +210,76 @@ export function StudentDashboard() {
     };
   };
 
+  // Action Center Logic
+  const pendingFeedbackEvents = useMemo(() => {
+    return registrations.filter(r =>
+      r.attendanceStatus === 'present' &&
+      !r.feedbackSubmitted &&
+      events.some(e => e.id === r.eventId)
+    ).map(r => events.find(e => e.id === r.eventId)!);
+  }, [registrations, events]);
+  const readyCertificates = useMemo(() => {
+    return registrations.filter(r => r.attendanceStatus === 'present').length;
+  }, [registrations]);
+
+  // Mini-Calendar Logic (Next 7 Days)
+  const miniCalendar = useMemo(() => {
+    const days = [];
+    const now = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      const dayEvents = events.filter(e => {
+        if (!e.startTime?.toDate) return false;
+        const ed = e.startTime.toDate();
+        return ed.getDate() === d.getDate() && ed.getMonth() === d.getMonth() && ed.getFullYear() === d.getFullYear();
+      });
+      days.push({
+        date: d,
+        dayName: d.toLocaleString('en', { weekday: 'short' }),
+        dayNum: d.getDate(),
+        hasEvent: dayEvents.length > 0,
+        eventCount: dayEvents.length
+      });
+    }
+    return days;
+  }, [events]);
+
+  // Achievement Logic
+  const badges = [
+    { id: 'bronze', label: 'Rookie', min: 1, icon: Trophy, color: '#CD7F32' },
+    { id: 'silver', label: 'Pro', min: 5, icon: Award, color: '#C0C0C0' },
+    { id: 'gold', label: 'Elite', min: 10, icon: Zap, color: '#FFD700' },
+    { id: 'legend', label: 'Legend', min: 25, icon: Sparkles, color: COLORS.pink },
+  ];
+  const earnedBadges = badges.filter(b => attendedCount >= b.min);
+
   return (
     <div className="space-y-8">
       {/* Welcome Banner */}
-      <BrutalCard color={COLORS.lavender} className="p-6 flex flex-col md:flex-row justify-between items-center gap-6 border-b-[6px]">
-        <div className="space-y-1">
-          <h2 className="text-3xl font-black uppercase italic tracking-tighter">HEY {firstName.toUpperCase()}!</h2>
-          <p className="text-[11px] font-bold uppercase opacity-80 italic">
-            You have <span className="underline">{upcoming.length} events</span> coming up. Don&apos;t be late.
-          </p>
+      <BrutalCard color={COLORS.lavender} className="p-6 flex flex-col md:flex-row justify-between items-center gap-6 border-b-[6px] relative overflow-hidden">
+        <div className="absolute top-0 right-0 opacity-10 -rotate-12 translate-x-4 -translate-y-4">
+          <Zap className="w-40 h-40" />
         </div>
-        <div className="flex flex-wrap justify-center gap-3">
+        <div className="space-y-1 relative z-10">
+          <div className="flex items-center gap-2">
+            <h2 className="text-3xl font-black uppercase italic tracking-tighter">HEY {firstName.toUpperCase()}! 👋</h2>
+            {earnedBadges.length > 0 && (
+              <Badge text={earnedBadges[earnedBadges.length - 1].label} color={earnedBadges[earnedBadges.length - 1].color} />
+            )}
+          </div>
+          <p className="text-[11px] font-bold uppercase opacity-80 italic">
+            Your current spirit level is <span className="underline">{earnedBadges.length > 0 ? earnedBadges[earnedBadges.length - 1].label : 'Neutral'}</span>. Keep moving!
+          </p>
+          <div className="flex gap-1.5 mt-2">
+            {badges.map(b => (
+              <div key={b.id} className={`w-6 h-6 rounded-full border-[2px] border-black flex items-center justify-center transition-all ${attendedCount >= b.min ? 'bg-white shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)]' : 'bg-black/10'}`}>
+                <b.icon className={`w-3.5 h-3.5 ${attendedCount >= b.min ? 'text-black' : 'opacity-20'}`} style={{ color: attendedCount >= b.min ? b.color : '' }} />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-center gap-3 relative z-10">
           {[
             { l: 'COMING', v: String(upcoming.length).padStart(2, '0'), c: COLORS.yellow },
             { l: 'REGS', v: String(regCount).padStart(2, '0'), c: COLORS.teal },
@@ -234,13 +294,65 @@ export function StudentDashboard() {
         </div>
       </BrutalCard>
 
+      {/* Quick Access & Action Center */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <BrutalCard
+          color={COLORS.yellow}
+          className="p-4 flex items-center gap-4 border-b-[5px] cursor-pointer hover:translate-x-1 hover:shadow-none transition-all"
+          onClick={() => setShowQR(true)}
+        >
+          <div className="w-12 h-12 bg-white border-[2.5px] border-black rounded-xl flex items-center justify-center shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
+            <QrCode className="w-6 h-6" />
+          </div>
+          <div>
+            <h4 className="font-black uppercase text-sm italic">Quick Ticket</h4>
+            <p className="text-[9px] font-bold opacity-60">Show QR for Entry</p>
+          </div>
+        </BrutalCard>
+
+        <div className="md:col-span-3">
+          {pendingFeedbackEvents.length > 0 ? (
+            <BrutalCard color={COLORS.pink} className="p-4 flex items-center justify-between border-b-[5px] animate-pulse">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-white border-[2.5px] border-black rounded-full flex items-center justify-center">
+                  <MessageSquare className="w-5 h-5 text-pink-600" />
+                </div>
+                <div>
+                  <h4 className="font-black uppercase text-xs italic">Action Required: Feedback</h4>
+                  <p className="text-[9px] font-bold opacity-80 italic">Submit feedback for &quot;{pendingFeedbackEvents[0].title}&quot; to claim your certificate!</p>
+                </div>
+              </div>
+              <BrutalButton color={COLORS.bg} className="px-4 py-1.5 text-[9px] font-black" onClick={() => setActiveTab('feedback')}>
+                GO NOW <ChevronRight className="w-3.5 h-3.5" />
+              </BrutalButton>
+            </BrutalCard>
+          ) : (
+            <BrutalCard className="p-4 flex items-center gap-4 border-b-[5px] opacity-60 grayscale hover:grayscale-0 transition-all">
+              <CheckCircle2 className="w-6 h-6" />
+              <p className="text-[10px] font-black uppercase italic">All event actions are up to date! Good job.</p>
+            </BrutalCard>
+          )}
+        </div>
+      </div>
+
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Upcoming Schedule */}
         <div className="lg:col-span-2 space-y-5">
-          <h3 className="text-xl font-black uppercase italic flex items-center gap-2">
-            <Calendar className="w-5 h-5" /> Upcoming Timeline
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-black uppercase italic flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-teal-600" /> Upcoming Timeline
+            </h3>
+            <div className="flex gap-1">
+              {miniCalendar.map((d, i) => (
+                <div key={i} className={`flex flex-col items-center p-1.5 border-[2px] border-black rounded-lg min-w-[42px] transition-all ${i === 0 ? 'bg-black text-white' : 'bg-white'} ${d.hasEvent ? 'shadow-[2.5px_2.5px_0px_0px_rgba(45,212,191,1)]' : ''}`}>
+                  <span className="text-[7px] font-black uppercase leading-none">{d.dayName}</span>
+                  <span className="text-[12px] font-black">{d.dayNum}</span>
+                  {d.hasEvent && <div className="w-1.5 h-1.5 bg-teal-400 rounded-full mt-0.5 border-[1px] border-black" />}
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="space-y-3">
             {upcoming.length === 0 ? (
               <BrutalCard className="p-6 text-center">
@@ -251,8 +363,8 @@ export function StudentDashboard() {
               upcoming.map((event) => {
                 const d = formatDate(event.startTime);
                 return (
-                  <BrutalCard 
-                    key={event.id} 
+                  <BrutalCard
+                    key={event.id}
                     className="flex items-center gap-5 p-4 border-l-[8px] border-l-black group hover:bg-slate-50 cursor-pointer"
                     onClick={() => handleOpenEvent(event)}
                   >
