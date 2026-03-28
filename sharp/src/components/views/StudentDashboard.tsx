@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Calendar, Award, BarChart2, Sparkles, Ticket, Trophy, Zap, CheckCircle2, MessageSquare, ChevronRight, QrCode, XCircle } from 'lucide-react';
+import { Calendar, Award, BarChart2, Sparkles, Ticket, Trophy, Zap, CheckCircle2, MessageSquare, ChevronRight, XCircle } from 'lucide-react';
 import { BrutalCard } from '@/components/ui/BrutalCard';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { Badge } from '@/components/ui/Badge';
@@ -20,7 +20,7 @@ export function StudentDashboard() {
   const { events, fetchPublicEvents } = useEvents();
   const { registrations, fetchUserRegistrations, registerForEvent } = useRegistrations();
   const { notifications, createNotification } = useNotifications(profile?.uid);
-  const { activeTab, setActiveTab, setShowQR } = useUIStore();
+  const { activeTab, setActiveTab } = useUIStore();
   const { settings } = useSettings();
   const [upcoming, setUpcoming] = useState<CampusEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
@@ -296,19 +296,6 @@ export function StudentDashboard() {
 
       {/* Quick Access & Action Center */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <BrutalCard
-          color={COLORS.yellow}
-          className="p-4 flex items-center gap-4 border-b-[5px] cursor-pointer hover:translate-x-1 hover:shadow-none transition-all"
-          onClick={() => setShowQR(true)}
-        >
-          <div className="w-12 h-12 bg-white border-[2.5px] border-black rounded-xl flex items-center justify-center shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
-            <QrCode className="w-6 h-6" />
-          </div>
-          <div>
-            <h4 className="font-black uppercase text-sm italic">Quick Ticket</h4>
-            <p className="text-[9px] font-bold opacity-60">Show QR for Entry</p>
-          </div>
-        </BrutalCard>
 
         <div className="md:col-span-3">
           {pendingFeedbackEvents.length > 0 ? (

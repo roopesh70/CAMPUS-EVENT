@@ -15,7 +15,6 @@ import { ExploreEvents } from '@/components/views/ExploreEvents';
 import { CalendarView } from '@/components/views/CalendarView';
 import { StudentDashboard } from '@/components/views/StudentDashboard';
 import { OrganizerDashboard, CreateEventFlow } from '@/components/views/OrganizerViews';
-import { MyQRCode } from '@/components/views/MyQRCode';
 import { AdminDashboard, AdminApprovals } from '@/components/views/AdminViews';
 import { PlaceholderSection } from '@/components/ui/PlaceholderSection';
 import {
@@ -29,7 +28,6 @@ import {
   AdminCertificateTemplates,
 } from '@/components/views/AllViews';
 import { AuthPageView } from '@/components/views/AuthPageView';
-import { GlobalQRModal } from '@/components/ui/GlobalQRModal';
 
 function PublicView({ tab }: { tab: string }) {
   if (tab === 'home') return <PublicHome />;
@@ -46,7 +44,6 @@ function StudentView({ tab }: { tab: string }) {
   if (tab === 'discover') return <ExploreEvents />;
   if (tab === 'calendar') return <CalendarView />;
   if (tab === 'registrations') return <MyRegistrations />;
-  if (tab === 'my-qr') return <MyQRCode />;
   if (tab === 'certificates') return <CertificatesPage />;
   if (tab === 'feedback') return <FeedbackPage />;
   if (tab === 'notifications') return <NotificationsPage />;
@@ -173,7 +170,6 @@ export default function HomePage() {
           </div>
         </div>
       </main>
-      {navRole === 'student' && <GlobalQRModal />}
     </div>
   );
 }

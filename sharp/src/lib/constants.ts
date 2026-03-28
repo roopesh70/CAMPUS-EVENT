@@ -2,7 +2,7 @@ import {
   Home, Compass, Calendar, Bell, Info, LogIn, LayoutDashboard,
   CheckSquare, Award, MessageSquare, User, CirclePlus,
   Users, CheckCircle2, FileText, BarChart2, ShieldCheck,
-  MapPin, Settings, Database, Activity, QrCode, Send,
+  MapPin, Settings, Database, Activity, Send,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -37,7 +37,6 @@ export const NAV_CONFIG: Record<Role, NavItem[]> = {
     { id: 'discover', label: 'Discover Events', icon: Compass },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'registrations', label: 'My Registrations', icon: CheckSquare },
-    { id: 'my-qr', label: 'My QR Code', icon: QrCode },
     { id: 'certificates', label: 'Certificates', icon: Award },
     { id: 'feedback', label: 'Feedback', icon: MessageSquare },
   ],
