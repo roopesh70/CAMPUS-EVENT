@@ -975,7 +975,7 @@ export function OrganizerMyEvents() {
     }
   };
 
-  const handleEditSave = async () => {
+  const handleEditSave = async (submitNow: boolean = false) => {
     if (!editingEvent || !profile) return;
     setSaving(true);
     
@@ -1000,8 +1000,15 @@ export function OrganizerMyEvents() {
       startTime: startTs,
       endTime: endTs,
       posterUrl: finalPosterUrl,
-      ...(settings?.requireEventApproval === false ? { status: 'approved' } : {}),
     };
+
+    if (submitNow && editingEvent.status === 'draft') {
+      payload.status = settings?.requireEventApproval === false ? 'approved' : 'pending';
+    } else if (!submitNow && editingEvent.status !== 'draft') {
+       // retain current status if editing an already submitted event
+       // or fallback to approval logic if somehow not set
+       // handled by existing backend ideally, but we prevent overriding to approved unnecessarily
+    }
     
     if (regDeadline) {
       payload.registrationDeadline = Timestamp.fromDate(new Date(`${regDeadline}T23:59`));
@@ -1117,7 +1124,9 @@ export function OrganizerMyEvents() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <BrutalButton color={COLORS.yellow} className="px-3 py-1 text-[9px]" onClick={() => openEdit(evt)}>Edit</BrutalButton>
+                {evt.status !== 'completed' && (
+                  <BrutalButton color={COLORS.yellow} className="px-3 py-1 text-[9px]" onClick={() => openEdit(evt)}>Edit</BrutalButton>
+                )}
                 <BrutalButton color={COLORS.red} className="px-3 py-1 text-[9px]" onClick={() => handleDelete(evt)}>Delete</BrutalButton>
                 
                 {evt.status === 'approved' && !evt.outcomeStatus && (
@@ -1271,7 +1280,14 @@ export function OrganizerMyEvents() {
 
             <div className="p-5 border-t-[4px] border-black bg-white flex justify-end gap-3">
               <BrutalButton color={COLORS.pink} onClick={() => setEditingEvent(null)}>Cancel</BrutalButton>
-              <BrutalButton color={COLORS.green} onClick={handleEditSave} disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</BrutalButton>
+              {editingEvent.status === 'draft' && (
+                <BrutalButton color={COLORS.yellow} onClick={() => handleEditSave(false)} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save Draft'}
+                </BrutalButton>
+              )}
+              <BrutalButton color={COLORS.green} onClick={() => handleEditSave(editingEvent.status === 'draft')} disabled={saving}>
+                {saving ? 'Processing...' : (editingEvent.status === 'draft' ? 'Submit for Approval' : 'Save Changes')}
+              </BrutalButton>
             </div>
           </BrutalCard>
         </div>

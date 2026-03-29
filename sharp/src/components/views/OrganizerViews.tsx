@@ -280,6 +280,7 @@ export function CreateEventFlow() {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [successIsDraft, setSuccessIsDraft] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
   const [alternatives, setAlternatives] = useState<string[]>([]);
 
@@ -361,7 +362,7 @@ export function CreateEventFlow() {
     }
   }, [step]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (isDraft: boolean = false) => {
     if (!profile) return;
     setSubmitError(null);
     setSubmitting(true);
@@ -393,7 +394,7 @@ export function CreateEventFlow() {
         startTime: startTs,
         endTime: endTs,
         capacity: parseInt(capacity) || 100,
-        status: settings?.requireEventApproval === false ? 'approved' : 'pending',
+        status: isDraft ? 'draft' : (settings?.requireEventApproval === false ? 'approved' : 'pending'),
         outcomeStatus: null,
         eligibility: { departments: eligDepts, years: eligYears },
         resources,
@@ -410,10 +411,11 @@ export function CreateEventFlow() {
         ...(regDeadline ? { registrationDeadline: Timestamp.fromDate(new Date(`${regDeadline}T23:59`)) } : {}),
       });
 
-      await logActivity(profile.uid, profile.name || profile.email, 'organizer', 'create_event', newEventId, 'event', title);
+      await logActivity(profile.uid, profile.name || profile.email, 'organizer', isDraft ? 'create_draft' : 'create_event', newEventId, 'event', title);
 
       setSubmitting(false);
       setSuccess(true);
+      setSuccessIsDraft(isDraft);
       setSubmitError(null);
     } catch (error: any) {
       setSubmitting(false);
@@ -431,9 +433,13 @@ export function CreateEventFlow() {
         <div className="w-24 h-24 border-[4px] border-black rounded-2xl bg-green-400 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] mx-auto flex items-center justify-center">
           <span className="text-4xl">✓</span>
         </div>
-        <h2 className="text-2xl font-black uppercase italic">Event Submitted!</h2>
-        <p className="text-[11px] font-bold opacity-60">Your event has been submitted for admin approval.</p>
-        <BrutalButton color={COLORS.yellow} onClick={() => { setSuccess(false); setStep(1); setTitle(''); setDescription(''); setPosterFile(null); setPosterPreview(''); setEventType('PHYSICAL'); setSubmitError(null); }}>
+        <h2 className="text-2xl font-black uppercase italic">
+          {successIsDraft ? 'Draft Saved!' : 'Event Submitted!'}
+        </h2>
+        <p className="text-[11px] font-bold opacity-60">
+          {successIsDraft ? 'Your event has been saved to your drafts.' : 'Your event has been submitted for admin approval.'}
+        </p>
+        <BrutalButton color={COLORS.yellow} onClick={() => { setSuccess(false); setSuccessIsDraft(false); setStep(1); setTitle(''); setDescription(''); setPosterFile(null); setPosterPreview(''); setEventType('PHYSICAL'); setSubmitError(null); }}>
           Create Another
         </BrutalButton>
       </div>
@@ -711,9 +717,14 @@ export function CreateEventFlow() {
             &larr; Previous
           </button>
           {step === 5 ? (
-            <BrutalButton className="px-8" color={COLORS.green} onClick={handleSubmit} disabled={submitting || uploading}>
-              {submitting ? (uploading ? `Uploading... ${uploadProgress}%` : 'Submitting...') : 'Submit Event'}
-            </BrutalButton>
+            <div className="flex gap-2">
+              <BrutalButton className="px-6" color={COLORS.yellow} onClick={() => handleSubmit(true)} disabled={submitting || uploading}>
+                {submitting ? 'Saving...' : 'Save as Draft'}
+              </BrutalButton>
+              <BrutalButton className="px-8" color={COLORS.green} onClick={() => handleSubmit(false)} disabled={submitting || uploading}>
+                {submitting ? (uploading ? `Uploading... ${uploadProgress}%` : 'Submitting...') : 'Submit Event'}
+              </BrutalButton>
+            </div>
           ) : (
             <BrutalButton className="px-8" onClick={() => setStep(step + 1)}>Continue</BrutalButton>
           )}
