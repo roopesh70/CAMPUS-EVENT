@@ -224,10 +224,19 @@ export function AdminDashboard() {
               <div
                 className="absolute inset-0 rounded-full"
                 style={{
-                  background: `conic-gradient(
-                    #F472B6 0deg ${(pendingEvents / (events.length || 1)) * 360}deg,
-                    #2DD4BF ${(pendingEvents / (events.length || 1)) * 360}deg 360deg
-                  )`
+                  background: (() => {
+                    const total = events.length || 1;
+                    const approvedStop = (activeEvents / total) * 360;
+                    const pendingStop = approvedStop + (pendingEvents / total) * 360;
+                    const drafts = events.filter(e => e.status === 'draft').length;
+                    const draftStop = pendingStop + (drafts / total) * 360;
+                    return `conic-gradient(
+                      ${COLORS.teal} 0deg ${approvedStop}deg,
+                      ${COLORS.pink} ${approvedStop}deg ${pendingStop}deg,
+                      ${COLORS.yellow} ${pendingStop}deg ${draftStop}deg,
+                      #E2E8F0 ${draftStop}deg 360deg
+                    )`;
+                  })()
                 }}
               />
               <div className="z-10 bg-white border-[3px] border-black w-16 h-16 rounded-full flex flex-col items-center justify-center group-hover:scale-105 transition-transform shadow-inner">

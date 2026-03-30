@@ -10,13 +10,16 @@ export function useTasks() {
 
   const fetchEventTasks = useCallback(async (eventId: string) => {
     setLoading(true);
-    const data = await queryDocs<EventTask>('tasks', [
-      where('eventId', '==', eventId),
-      orderBy('createdAt', 'desc'),
-    ]);
-    setTasks(data);
-    setLoading(false);
-    return data;
+    try {
+      const data = await queryDocs<EventTask>('tasks', [
+        where('eventId', '==', eventId),
+        orderBy('createdAt', 'desc'),
+      ]);
+      setTasks(data);
+      return data;
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const fetchOrganizerTasks = useCallback(async (eventIds: string[]) => {
