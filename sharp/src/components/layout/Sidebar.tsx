@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Compass, X, LogOut, LogIn } from 'lucide-react';
+import { X, LogOut, LogIn } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -36,11 +36,12 @@ export function Sidebar() {
         {/* Logo Header */}
         <div className="p-5 border-b-[3px] border-black flex items-center justify-between bg-white sticky top-0 z-10">
           <div className="flex items-center gap-2 overflow-hidden">
-            <div className="w-7 h-7 bg-red-500 border-[2px] border-black rounded-full flex items-center justify-center shrink-0 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]">
-              <Compass className="text-white w-3.5 h-3.5" />
+            <div className="w-7 h-7 flex items-center justify-center shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.png" alt="CAMEVE" className="w-full h-full object-contain" />
             </div>
             {sidebarOpen && (
-              <h1 className="text-lg font-black italic tracking-tighter uppercase">SHARP</h1>
+              <h1 className="text-lg font-black italic tracking-tighter uppercase">CAMEVE</h1>
             )}
           </div>
           <button onClick={() => setSidebarOpen(false)} className="md:hidden">

@@ -105,7 +105,7 @@ export function StudentDashboard() {
   };
 
   const handleShare = async (evt: CampusEvent) => {
-    const shareData = { title: evt.title, text: `Check out "${evt.title}" on SHARP!`, url: window.location.href };
+    const shareData = { title: evt.title, text: `Check out "${evt.title}" on CAMEVE!`, url: window.location.href };
     if (navigator.share) {
       try { await navigator.share(shareData); } catch { }
     } else {

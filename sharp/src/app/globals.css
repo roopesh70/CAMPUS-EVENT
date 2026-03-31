@@ -2,13 +2,13 @@
 
 @theme inline {
   /* Neo-Brutalist Color System */
-  --color-sharp-yellow: #FACC15;
-  --color-sharp-teal: #2DD4BF;
-  --color-sharp-pink: #F472B6;
-  --color-sharp-lavender: #A78BFA;
-  --color-sharp-red: #EF4444;
-  --color-sharp-green: #4ADE80;
-  --color-sharp-bg: #FFFBEB;
+  --color-cameve-yellow: #FACC15;
+  --color-cameve-teal: #2DD4BF;
+  --color-cameve-pink: #F472B6;
+  --color-cameve-lavender: #A78BFA;
+  --color-cameve-red: #EF4444;
+  --color-cameve-green: #4ADE80;
+  --color-cameve-bg: #FFFBEB;
 
   /* Font */
   --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Monaco, 'Courier New', monospace;

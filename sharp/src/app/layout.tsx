@@ -4,7 +4,7 @@ import { AuthProvider } from "@/components/auth/AuthProvider";
 import ToastNotifications from "@/components/notifications/ToastNotifications";
 
 export const metadata: Metadata = {
-  title: "SHARP — Campus Event Management System",
+  title: "CAMEVE — Campus Event Management System",
   description: "Centralized digital platform for managing the complete lifecycle of campus events. Create, discover, register, attend, and earn certificates.",
 };
 

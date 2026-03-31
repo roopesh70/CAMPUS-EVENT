@@ -394,7 +394,7 @@ export function EventDetailModal({
         {/* Sticky Footer Info */}
         <div className="p-4 bg-yellow-400 border-t-[4px] border-black text-center shrink-0">
           <p className="text-[9px] font-black uppercase italic tracking-widest">
-            SHARP HQ • VERIFIED CAMPUS EVENT • SECURE PROTOCOL {new Date().getFullYear()}
+            CAMEVE HQ • VERIFIED CAMPUS EVENT • SECURE PROTOCOL {new Date().getFullYear()}
           </p>
         </div>
       </div>

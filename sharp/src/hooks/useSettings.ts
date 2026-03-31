@@ -14,10 +14,10 @@ const DEFAULT_SETTINGS: Omit<SystemSettings, 'id'> = {
   allowAnonymousFeedback: true,
   restrictedRoles: [],
   // Social Links
-  twitterUrl: 'https://twitter.com/sharp',
-  instagramUrl: 'https://instagram.com/sharp',
-  githubUrl: 'https://github.com/sharp',
-  youtubeUrl: 'https://youtube.com/sharp',
+  twitterUrl: 'https://twitter.com/cameve',
+  instagramUrl: 'https://instagram.com/cameve',
+  githubUrl: 'https://github.com/cameve',
+  youtubeUrl: 'https://youtube.com/cameve',
   campusWebsiteUrl: 'https://campus.edu',
   // Legal Content (HTML supported)
   privacyPolicy: `
@@ -25,7 +25,7 @@ const DEFAULT_SETTINGS: Omit<SystemSettings, 'id'> = {
     <div class="space-y-6 text-sm leading-relaxed text-black/80">
       <section>
         <h2 class="text-xl font-black uppercase mb-3 italic underline decoration-[4px] decoration-teal-400">1. Data Collection</h2>
-        <p>SHARP collects essential information to manage campus events. This includes your name, institutional email, department, and academic year. We also collect activity logs for event registrations and attendance.</p>
+        <p>CAMEVE collects essential information to manage campus events. This includes your name, institutional email, department, and academic year. We also collect activity logs for event registrations and attendance.</p>
       </section>
       <section>
         <h2 class="text-xl font-black uppercase mb-3 italic underline decoration-[4px] decoration-yellow-400">2. Usage</h2>
@@ -63,7 +63,7 @@ const DEFAULT_SETTINGS: Omit<SystemSettings, 'id'> = {
       </section>
       <section>
         <h2 class="text-xl font-black uppercase mb-3 italic underline decoration-[4px] decoration-teal-400">2. Certificates</h2>
-        <p>Certificates issued through SHARP are official digital records. Authenticity can be verified via unique codes. Tampering with certificates is a serious violation.</p>
+        <p>Certificates issued through CAMEVE are official digital records. Authenticity can be verified via unique codes. Tampering with certificates is a serious violation.</p>
       </section>
       <section>
         <h2 class="text-xl font-black uppercase mb-3 italic underline decoration-[4px] decoration-red-400">3. Accountability</h2>

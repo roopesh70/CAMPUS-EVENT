@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="sharp\src\app\favicon.ico" alt="SHARP Logo" width="80" />
+  <img src="sharp/src/app/favicon.ico" alt="SHARP Logo" width="80" />
 </p>
 
 <h1 align="center">SHARP — Campus Event Management System</h1>

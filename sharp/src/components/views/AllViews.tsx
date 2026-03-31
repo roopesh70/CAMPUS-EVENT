@@ -42,6 +42,9 @@ export function AnnouncementsPage() {
       const seen = new Set<string>();
       const unique = data.filter(n => { if (seen.has(n.message || '')) return false; seen.add(n.message || ''); return true; });
       setAnnouncements(unique.slice(0, 6));
+    }).catch(() => {
+      // Public users may lack permissions — show empty state gracefully
+      setAnnouncements([]);
     });
   }, []);
 
@@ -73,11 +76,11 @@ export function AnnouncementsPage() {
 export function AboutPage() {
   return (
     <div className="space-y-8">
-      <h2 className="text-3xl font-black uppercase italic tracking-tighter underline decoration-[5px] decoration-teal-400 underline-offset-4">About Sharp</h2>
+      <h2 className="text-3xl font-black uppercase italic tracking-tighter underline decoration-[5px] decoration-teal-400 underline-offset-4">About Cameve</h2>
       <BrutalCard className="p-6 space-y-4 border-b-[6px]">
         <h3 className="text-lg font-black uppercase italic">About Platform</h3>
         <p className="text-[11px] font-bold leading-relaxed opacity-70">
-          SHARP is the centralized digital platform designed to streamline the complete lifecycle of campus events in educational institutions. From event creation to approval, registration to attendance tracking, and certificates to analytics — SHARP handles it all.
+          CAMEVE is the centralized digital platform designed to streamline the complete lifecycle of campus events in educational institutions. From event creation to approval, registration to attendance tracking, and certificates to analytics — CAMEVE handles it all.
         </p>
       </BrutalCard>
       <BrutalCard className="p-6 space-y-4 border-b-[6px]" color={COLORS.yellow}>
@@ -352,7 +355,7 @@ export function CertificatesPage() {
       const dateStr = cert.issueDate?.toDate ? cert.issueDate.toDate().toLocaleDateString() : new Date().toLocaleDateString();
       ctx.fillText(`Date: ${dateStr}`, 600, 620);
       ctx.fillText(`Verification: ${cert.verificationCode}`, 600, 660);
-      ctx.fillStyle = '#000'; ctx.font = 'bold 28px monospace'; ctx.fillText('SHARP — Campus Events', 600, 750);
+      ctx.fillStyle = '#000'; ctx.font = 'bold 28px monospace'; ctx.fillText('CAMEVE — Campus Events', 600, 750);
       const link = document.createElement('a');
       link.download = `certificate_${cert.verificationCode}.png`;
       link.href = canvas.toDataURL('image/png');
@@ -1660,7 +1663,7 @@ export function AttendancePage() {
               setScanResult('✗ Invalid QR code format');
             }
           } else {
-            setScanResult('✗ Invalid QR code — not a SHARP check-in code');
+            setScanResult('✗ Invalid QR code — not a CAMEVE check-in code');
           }
           setTimeout(() => { setScanResult(''); lastScannedRef.current = ''; }, 4000);
         },

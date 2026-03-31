@@ -67,7 +67,7 @@ export function Topbar() {
         ) : (
           <div className="hidden sm:flex flex-col items-end mr-1">
             <span className="text-[7.5px] font-black uppercase opacity-30 leading-none">Guest</span>
-            <span className="text-xs font-black uppercase italic tracking-tighter">SHARP</span>
+            <span className="text-xs font-black uppercase italic tracking-tighter">CAMEVE</span>
           </div>
         )}
       </div>

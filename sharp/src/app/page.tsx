@@ -115,10 +115,11 @@ export default function HomePage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FFFBEB]">
         <div className="text-center space-y-4">
-          <div className="w-20 h-20 border-[4px] border-black rounded-2xl bg-yellow-400 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] animate-bounce mx-auto flex items-center justify-center">
-            <span className="font-black text-2xl italic">S</span>
+          <div className="w-20 h-20 border-[4px] border-black rounded-2xl bg-yellow-400 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] animate-bounce mx-auto flex items-center justify-center p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="CAMEVE" className="w-full h-full object-contain" />
           </div>
-          <p className="font-black uppercase text-[10px] tracking-widest opacity-40 italic">Initializing SHARP...</p>
+          <p className="font-black uppercase text-[10px] tracking-widest opacity-40 italic">Initializing CAMEVE...</p>
         </div>
       </div>
     );

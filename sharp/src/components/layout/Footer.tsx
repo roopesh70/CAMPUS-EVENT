@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Compass, Twitter, Instagram, Github, Youtube, Globe, X } from 'lucide-react';
+import { Twitter, Instagram, Github, Youtube, Globe, X } from 'lucide-react';
 import { useSettings } from '@/hooks/useSettings';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { COLORS } from '@/lib/constants';
@@ -92,10 +92,11 @@ export function Footer() {
         {/* Brand */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-red-500 border-2 border-white rounded-full flex items-center justify-center shadow-[1.5px_1.5px_0px_0px_rgba(255,255,255,1)]">
-              <Compass className="text-white w-4 h-4" />
+            <div className="w-8 h-8 flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.png" alt="CAMEVE" className="w-full h-full object-contain" />
             </div>
-            <h2 className="text-xl font-black italic tracking-tighter">SHARP</h2>
+            <h2 className="text-xl font-black italic tracking-tighter">CAMEVE</h2>
           </div>
           <div className="flex flex-col gap-1.5 font-bold uppercase text-[9px] opacity-60">
             {legalItems.map(item => (
@@ -167,7 +168,7 @@ export function Footer() {
 
       <div className="border-t border-white/10 mt-10 pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left">
         <p className="text-[9px] font-bold uppercase opacity-30 italic">
-          © Sharp Campus {currentYear}. Experience the Edge.
+          © Cameve Campus {currentYear}. Experience the Edge.
         </p>
         <div className="flex gap-6 opacity-30 text-[8px] font-black uppercase">
           <span>v{APP_VERSION}</span>
