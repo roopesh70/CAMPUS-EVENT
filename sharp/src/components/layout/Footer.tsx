@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Twitter, Instagram, Github, Youtube, Globe, X } from 'lucide-react';
+import Image from 'next/image';
 import { useSettings } from '@/hooks/useSettings';
 import { BrutalButton } from '@/components/ui/BrutalButton';
 import { COLORS } from '@/lib/constants';
@@ -92,9 +93,8 @@ export function Footer() {
         {/* Brand */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 flex items-center justify-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="CAMEVE" className="w-full h-full object-contain" />
+            <div className="w-8 h-8 relative flex items-center justify-center">
+              <Image src="/logo.png" alt="CAMEVE" width={32} height={32} className="object-contain" />
             </div>
             <h2 className="text-xl font-black italic tracking-tighter">CAMEVE</h2>
           </div>

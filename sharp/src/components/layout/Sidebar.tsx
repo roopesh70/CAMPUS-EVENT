@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X, LogOut, LogIn } from 'lucide-react';
+import Image from 'next/image';
 import { useAuthStore } from '@/stores/authStore';
 import { useUIStore } from '@/stores/uiStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -36,9 +37,8 @@ export function Sidebar() {
         {/* Logo Header */}
         <div className="p-5 border-b-[3px] border-black flex items-center justify-between bg-white sticky top-0 z-10">
           <div className="flex items-center gap-2 overflow-hidden">
-            <div className="w-7 h-7 flex items-center justify-center shrink-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="CAMEVE" className="w-full h-full object-contain" />
+            <div className="w-7 h-7 relative flex items-center justify-center shrink-0">
+              <Image src="/logo.png" alt="CAMEVE" width={28} height={28} className="object-contain" />
             </div>
             {sidebarOpen && (
               <h1 className="text-lg font-black italic tracking-tighter uppercase">CAMEVE</h1>
