@@ -977,6 +977,18 @@ export function OrganizerMyEvents() {
 
   const handleEditSave = async (submitNow: boolean = false) => {
     if (!editingEvent || !profile) return;
+
+    // Validate date/time: not in the past & start < end (skip for drafts saved as drafts)
+    const isStayingDraft = editingEvent.status === 'draft' && !submitNow;
+    if (!isStayingDraft) {
+      if (!date) { setEditError('Event date is required.'); return; }
+      if (!startTime || !endTime) { setEditError('Start time and end time are required.'); return; }
+      const eventStart = new Date(`${date}T${startTime}`);
+      const eventEnd = new Date(`${date}T${endTime}`);
+      if (eventStart < new Date()) { setEditError('Event date/time cannot be in the past.'); return; }
+      if (eventStart >= eventEnd) { setEditError('Start time must be before end time.'); return; }
+    }
+
     setSaving(true);
     
     let venueName = editingEvent.venueName;
@@ -1227,22 +1239,22 @@ export function OrganizerMyEvents() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Date</label>
-                  <BrutalInput type="date" value={date} onChange={e => setDate(e.target.value)} />
+                  <BrutalInput type="date" value={date} onChange={e => { setDate(e.target.value); setEditError(null); }} min={new Date().toISOString().split('T')[0]} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Registration Deadline</label>
-                  <BrutalInput type="date" value={regDeadline} onChange={e => setRegDeadline(e.target.value)} />
+                  <BrutalInput type="date" value={regDeadline} onChange={e => setRegDeadline(e.target.value)} min={new Date().toISOString().split('T')[0]} />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Start Time</label>
-                  <BrutalInput type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
+                  <BrutalInput type="time" value={startTime} onChange={e => { setStartTime(e.target.value); setEditError(null); }} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">End Time</label>
-                  <BrutalInput type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
+                  <BrutalInput type="time" value={endTime} onChange={e => { setEndTime(e.target.value); setEditError(null); }} />
                 </div>
               </div>
 

@@ -283,6 +283,7 @@ export function CreateEventFlow() {
   const [successIsDraft, setSuccessIsDraft] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
   const [alternatives, setAlternatives] = useState<string[]>([]);
+  const [dateError, setDateError] = useState<string | null>(null);
 
   // Form state complete
   const [eventType, setEventType] = useState<'PHYSICAL' | 'ONLINE'>('PHYSICAL');
@@ -362,10 +363,32 @@ export function CreateEventFlow() {
     }
   }, [step]);
 
+  // Validate date and times: not in the past and start < end
+  const validateDateTime = (): string | null => {
+    if (!date) return 'Event date is required.';
+    if (!startTime || !endTime) return 'Start time and end time are required.';
+    const eventStart = new Date(`${date}T${startTime}`);
+    const eventEnd = new Date(`${date}T${endTime}`);
+    const now = new Date();
+    if (eventStart < now) return 'Event date/time cannot be in the past.';
+    if (eventStart >= eventEnd) return 'Start time must be before end time.';
+    return null;
+  };
+
   const handleSubmit = async (isDraft: boolean = false) => {
     if (!profile) return;
     setSubmitError(null);
     setSubmitting(true);
+
+    // Skip date validation for drafts (organiser may save incomplete work)
+    if (!isDraft) {
+      const dtError = validateDateTime();
+      if (dtError) {
+        setSubmitError(dtError);
+        setSubmitting(false);
+        return;
+      }
+    }
 
     // Upload poster to Cloudinary if selected
     let posterUrl = '';
@@ -525,10 +548,15 @@ export function CreateEventFlow() {
                 {venues.map(v => <option key={v.id} value={v.id}>{v.name} (cap: {v.capacity})</option>)}
               </select>
             </div>
+            {dateError && (
+              <div className="border-[2.5px] border-red-600 rounded-xl p-3 bg-red-50">
+                <p className="text-[10px] font-black uppercase italic text-red-700">⚠ {dateError}</p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Date</label>
-                <BrutalInput type="date" value={date} onChange={e => setDate(e.target.value)} />
+                <BrutalInput type="date" value={date} onChange={e => { setDate(e.target.value); setDateError(null); }} min={new Date().toISOString().split('T')[0]} />
               </div>
               <div className="space-y-1.5">
                 <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Capacity</label>
@@ -538,16 +566,16 @@ export function CreateEventFlow() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Start Time</label>
-                <BrutalInput type="time" value={startTime} onChange={e => setStartTime(e.target.value)} />
+                <BrutalInput type="time" value={startTime} onChange={e => { setStartTime(e.target.value); setDateError(null); }} />
               </div>
               <div className="space-y-1.5">
                 <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">End Time</label>
-                <BrutalInput type="time" value={endTime} onChange={e => setEndTime(e.target.value)} />
+                <BrutalInput type="time" value={endTime} onChange={e => { setEndTime(e.target.value); setDateError(null); }} />
               </div>
             </div>
             <div className="space-y-1.5">
               <label className="font-black uppercase text-[9px] tracking-widest opacity-40 italic">Registration Deadline</label>
-              <BrutalInput type="date" value={regDeadline} onChange={e => setRegDeadline(e.target.value)} />
+              <BrutalInput type="date" value={regDeadline} onChange={e => setRegDeadline(e.target.value)} min={new Date().toISOString().split('T')[0]} />
               <p className="text-[8px] font-bold opacity-30 italic">Leave empty for no deadline</p>
             </div>
           </div>
@@ -726,7 +754,18 @@ export function CreateEventFlow() {
               </BrutalButton>
             </div>
           ) : (
-            <BrutalButton className="px-8" onClick={() => setStep(step + 1)}>Continue</BrutalButton>
+            <BrutalButton className="px-8" onClick={() => {
+              // Validate date/time when leaving step 2
+              if (step === 2) {
+                const dtError = validateDateTime();
+                if (dtError) {
+                  setDateError(dtError);
+                  return;
+                }
+                setDateError(null);
+              }
+              setStep(step + 1);
+            }}>Continue</BrutalButton>
           )}
         </div>
       </BrutalCard>

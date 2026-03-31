@@ -79,6 +79,17 @@ export function useEvents() {
     const eventType = data.eventType || 'PHYSICAL';
     let docRefId = '';
 
+    // Date validation: reject past events and start >= end
+    if (data.startTime && data.endTime) {
+      const now = Date.now();
+      if (data.startTime.toMillis() < now) {
+        throw new Error('Event date/time cannot be in the past.');
+      }
+      if (data.startTime.toMillis() >= data.endTime.toMillis()) {
+        throw new Error('Start time must be before end time.');
+      }
+    }
+
     // 1. Double-Booking Validation (Outside transaction)
     if (eventType === 'PHYSICAL' && data.venueId) {
       const q = query(collection(db, 'events'), where('venueId', '==', data.venueId), where('status', '==', 'approved'));
@@ -169,6 +180,16 @@ export function useEvents() {
     const snap = await getDoc(doc(db, 'events', eventId));
     if (!snap.exists()) throw new Error("Event not found");
     const currentEvent = snap.data() as CampusEvent;
+
+    // Date validation: reject past events and start >= end
+    const newStart = data.startTime ? data.startTime.toMillis() : currentEvent.startTime.toMillis();
+    const newEnd = data.endTime ? data.endTime.toMillis() : currentEvent.endTime.toMillis();
+    if (newStart < Date.now()) {
+      throw new Error('Event date/time cannot be in the past.');
+    }
+    if (newStart >= newEnd) {
+      throw new Error('Start time must be before end time.');
+    }
 
     const eventType = data.eventType !== undefined ? data.eventType : (currentEvent.eventType || 'PHYSICAL');
     const venueId = data.venueId !== undefined ? data.venueId : currentEvent.venueId;

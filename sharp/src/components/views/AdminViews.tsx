@@ -201,74 +201,86 @@ export function AdminDashboard() {
         </BrutalCard>
 
         {/* Category Breakdown (Enhanced) */}
-        <BrutalCard className="flex flex-col p-6 gap-6 bg-white border-[2.5px] border-b-[6px]">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[11px] font-black uppercase italic tracking-widest flex items-center gap-2">
-              <BarChart3 className="w-3.5 h-3.5" /> Stats Visualization
-            </h3>
-            <div className="flex gap-2">
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-green-400 border border-black" />
-                <span className="text-[8px] font-black uppercase opacity-40">{successfulEvents} OK</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full bg-red-400 border border-black" />
-                <span className="text-[8px] font-black uppercase opacity-40">{failedEvents} FAIL</span>
-              </div>
-            </div>
-          </div>
+        {(() => {
+          const total = events.length || 1;
+          const completedEvents = events.filter(e => e.status === 'completed').length;
+          const rejectedEvents = events.filter(e => e.status === 'rejected').length;
+          const draftEvents = events.filter(e => e.status === 'draft').length;
 
-          <div className="flex flex-col sm:flex-row items-center gap-8 justify-center py-4">
-            <div className="relative w-36 h-36 border-[5px] border-black rounded-full flex items-center justify-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] bg-slate-100 overflow-hidden group">
-              {/* Approvals Ratio Chart */}
-              <div
-                className="absolute inset-0 rounded-full"
-                style={{
-                  background: (() => {
-                    const total = events.length || 1;
-                    const approvedStop = (activeEvents / total) * 360;
-                    const pendingStop = approvedStop + (pendingEvents / total) * 360;
-                    const drafts = events.filter(e => e.status === 'draft').length;
-                    const draftStop = pendingStop + (drafts / total) * 360;
-                    return `conic-gradient(
-                      ${COLORS.teal} 0deg ${approvedStop}deg,
-                      ${COLORS.pink} ${approvedStop}deg ${pendingStop}deg,
-                      ${COLORS.yellow} ${pendingStop}deg ${draftStop}deg,
-                      #E2E8F0 ${draftStop}deg 360deg
-                    )`;
-                  })()
-                }}
-              />
-              <div className="z-10 bg-white border-[3px] border-black w-16 h-16 rounded-full flex flex-col items-center justify-center group-hover:scale-105 transition-transform shadow-inner">
-                <span className="text-lg font-black leading-none italic">{events.length}</span>
-                <span className="text-[6px] font-black uppercase opacity-40">Total</span>
-              </div>
-            </div>
+          // Define all slices for the donut chart
+          const slices = [
+            { label: 'Approved', count: activeEvents, color: COLORS.teal },
+            { label: 'Completed', count: completedEvents, color: COLORS.green },
+            { label: 'Pending', count: pendingEvents, color: COLORS.pink },
+            { label: 'Rejected', count: rejectedEvents, color: COLORS.red },
+            { label: 'Draft', count: draftEvents, color: COLORS.yellow },
+          ];
 
-            <div className="flex flex-col gap-3 flex-grow max-w-[200px]">
-              <OutcomeStat label="Successful Events" count={successfulEvents} total={events.length} color={COLORS.green} />
-              <OutcomeStat label="Failed / Cancelled" count={failedEvents} total={events.length} color={COLORS.red} />
-              <div className="border-t-[1.5px] border-black border-dashed pt-2 mt-2 space-y-2">
-                <div className="flex justify-between text-[10px] font-black italic">
-                  <span>Approved Rate</span>
-                  <span>{events.length > 0 ? Math.round((activeEvents / events.length) * 100) : 0}%</span>
-                </div>
-                <div className="w-full h-2 bg-slate-100 border border-black rounded-full overflow-hidden">
-                  <div className="h-full bg-teal-400" style={{ width: `${events.length > 0 ? (activeEvents / events.length) * 100 : 0}%` }} />
+          // Build conic-gradient stops
+          let currentDeg = 0;
+          const gradientStops = slices.map(s => {
+            const startDeg = currentDeg;
+            const endDeg = currentDeg + (s.count / total) * 360;
+            currentDeg = endDeg;
+            return `${s.color} ${startDeg}deg ${endDeg}deg`;
+          }).join(', ');
+
+          return (
+            <BrutalCard className="flex flex-col p-6 gap-6 bg-white border-[2.5px] border-b-[6px]">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[11px] font-black uppercase italic tracking-widest flex items-center gap-2">
+                  <BarChart3 className="w-3.5 h-3.5" /> Stats Visualization
+                </h3>
+                <div className="flex gap-3">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-green-400 border border-black" />
+                    <span className="text-[8px] font-black uppercase opacity-40">{successfulEvents} OK</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-red-400 border border-black" />
+                    <span className="text-[8px] font-black uppercase opacity-40">{failedEvents} FAIL</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div className="flex flex-wrap gap-3 justify-center pt-2">
-            {['Approved', 'Pending', 'Draft'].map((t, i) => (
-              <div key={t} className="flex items-center gap-1.5 font-black text-[8px] uppercase tracking-tighter bg-slate-50 px-2 py-1 border-[1.5px] border-black rounded-lg">
-                <div className="w-2 h-2 border-[1px] border-black rounded-sm" style={{ backgroundColor: [COLORS.teal, COLORS.pink, COLORS.yellow][i] }}></div>
-                {t}: <span className="opacity-60">{[activeEvents, pendingEvents, events.filter(e => e.status === 'draft').length][i]}</span>
+              <div className="flex flex-col sm:flex-row items-center gap-8 justify-center py-4">
+                <div className="relative w-36 h-36 border-[5px] border-black rounded-full flex items-center justify-center shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] bg-slate-200 overflow-hidden group">
+                  <div
+                    className="absolute inset-0 rounded-full"
+                    style={{ background: `conic-gradient(${gradientStops})` }}
+                  />
+                  <div className="z-10 bg-white border-[3px] border-black w-16 h-16 rounded-full flex flex-col items-center justify-center group-hover:scale-105 transition-transform shadow-inner">
+                    <span className="text-lg font-black leading-none italic">{events.length}</span>
+                    <span className="text-[6px] font-black uppercase opacity-40">Total</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 flex-grow max-w-[220px]">
+                  <OutcomeStat label="Successful Events" count={successfulEvents} total={events.length} color={COLORS.green} />
+                  <OutcomeStat label="Failed / Cancelled" count={failedEvents} total={events.length} color={COLORS.red} />
+                  <div className="border-t-[1.5px] border-black border-dashed pt-2 mt-2 space-y-2">
+                    <div className="flex justify-between text-[10px] font-black italic">
+                      <span>Approved Rate</span>
+                      <span>{events.length > 0 ? Math.round((activeEvents / events.length) * 100) : 0}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 border border-black rounded-full overflow-hidden">
+                      <div className="h-full bg-teal-400" style={{ width: `${events.length > 0 ? (activeEvents / events.length) * 100 : 0}%` }} />
+                    </div>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
-        </BrutalCard>
+
+              <div className="flex flex-wrap gap-2 justify-center pt-2">
+                {slices.map((s) => (
+                  <div key={s.label} className="flex items-center gap-1.5 font-black text-[8px] uppercase tracking-tighter bg-slate-50 px-2.5 py-1.5 border-[1.5px] border-black rounded-lg">
+                    <div className="w-2.5 h-2.5 border-[1px] border-black rounded-sm" style={{ backgroundColor: s.color }} />
+                    {s.label}: <span className="opacity-60">{s.count}</span>
+                  </div>
+                ))}
+              </div>
+            </BrutalCard>
+          );
+        })()}
       </div>
 
       {/* 4. Recent Activity Feed */}
