@@ -15,6 +15,7 @@ import { PublicHome } from '@/components/views/PublicHome';
 import { ExploreEvents } from '@/components/views/ExploreEvents';
 import { CalendarView } from '@/components/views/CalendarView';
 import { StudentDashboard } from '@/components/views/StudentDashboard';
+import { MyQRCode } from '@/components/views/MyQRCode';
 import { OrganizerDashboard, CreateEventFlow } from '@/components/views/OrganizerViews';
 import { AdminDashboard, AdminApprovals } from '@/components/views/AdminViews';
 import { PlaceholderSection } from '@/components/ui/PlaceholderSection';
@@ -45,6 +46,7 @@ function StudentView({ tab }: { tab: string }) {
   if (tab === 'discover') return <ExploreEvents />;
   if (tab === 'calendar') return <CalendarView />;
   if (tab === 'registrations') return <MyRegistrations />;
+  if (tab === 'attendance') return <MyQRCode />;
   if (tab === 'certificates') return <CertificatesPage />;
   if (tab === 'feedback') return <FeedbackPage />;
   if (tab === 'notifications') return <NotificationsPage />;

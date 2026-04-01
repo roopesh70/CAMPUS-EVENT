@@ -320,6 +320,21 @@ export function StudentDashboard() {
             </BrutalCard>
           )}
         </div>
+
+        {/* QR Quick Access Card */}
+        <div className="md:col-span-1">
+          <BrutalCard color={COLORS.teal} className="p-4 border-b-[5px] cursor-pointer hover:shadow-none transition-all" onClick={() => setActiveTab('attendance')}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white border-[2.5px] border-black rounded-full flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                <Ticket className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-black uppercase text-xs italic">My QR Codes</h4>
+                <p className="text-[8px] font-bold opacity-60 italic">Show QR for check-in</p>
+              </div>
+            </div>
+          </BrutalCard>
+        </div>
       </div>
 
       {/* Main Grid */}
