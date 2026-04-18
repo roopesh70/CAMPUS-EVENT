@@ -2,7 +2,7 @@
   <img src="sharp/src/app/favicon.ico" alt="SHARP Logo" width="80" />
 </p>
 
-<h1 align="center">SHARP — Campus Event Management System</h1>
+<h1 align="center">CAMEVE — Campus Event Management System</h1>
 
 <p align="center">
   A centralized digital platform for managing the complete lifecycle of campus events — from proposal to certificates.
@@ -38,7 +38,7 @@
 
 ## 🎯 Overview
 
-**SHARP** is a full-featured Campus Event Management System designed for educational institutions. It streamlines event creation, discovery, registration, attendance tracking, certificate generation, and analytics — all in one place. The platform serves three distinct user roles with tailored dashboards and workflows, wrapped in a bold **Neobrutalist** UI design.
+**CAMEVE** is a full-featured Campus Event Management System designed for educational institutions. It streamlines event creation, discovery, registration, attendance tracking, certificate generation, and analytics — all in one place. The platform serves three distinct user roles with tailored dashboards and workflows, wrapped in a bold **Neobrutalist** UI design.
 
 ---
 
